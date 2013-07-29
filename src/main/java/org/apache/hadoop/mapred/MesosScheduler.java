@@ -706,12 +706,11 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
             overrides.write(new DataOutputStream(baos));
             baos.flush();
           } catch (IOException e) {
-            LOG.warn(e);
-            e.printStackTrace();
+            LOG.warn("Failed to serialize configuration.", e);
+            System.exit(1);
           }
 
-          byte[] data = baos.toByteArray();
-          String converted = Base64.encodeBase64String(data);
+          String converted = Base64.encodeBase64String(baos.toByteArray());
 
           Protos.Environment.Builder envBuilder = Protos.Environment
               .newBuilder()
