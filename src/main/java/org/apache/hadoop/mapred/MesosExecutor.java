@@ -1,43 +1,76 @@
 package org.apache.hadoop.mapred;
 
-import java.io.IOException;
-
+import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.mesos.Executor;
 import org.apache.mesos.ExecutorDriver;
 import org.apache.mesos.MesosExecutorDriver;
 import org.apache.mesos.Protos.Environment.Variable;
-import org.apache.mesos.Protos.ExecutorInfo;
-import org.apache.mesos.Protos.FrameworkInfo;
-import org.apache.mesos.Protos.SlaveInfo;
-import org.apache.mesos.Protos.Status;
+import org.apache.mesos.Protos.*;
 import org.apache.mesos.Protos.TaskID;
-import org.apache.mesos.Protos.TaskInfo;
-import org.apache.mesos.Protos.TaskState;
 import org.apache.mesos.Protos.TaskStatus;
+import org.apache.mesos.hadoop.Constants;
+
+import javax.xml.transform.TransformerException;
+import java.io.*;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 public class MesosExecutor implements Executor {
   public static final Log LOG = LogFactory.getLog(MesosExecutor.class);
-
   private JobConf conf;
   private TaskTracker taskTracker;
 
+  public static void main(String[] args) {
+    MesosExecutorDriver driver = new MesosExecutorDriver(new MesosExecutor());
+    System.exit(driver.run() == Status.DRIVER_STOPPED ? 0 : 1);
+  }
+
   @Override
   public void registered(ExecutorDriver driver, ExecutorInfo executorInfo,
-      FrameworkInfo frameworkInfo, SlaveInfo slaveInfo) {
+                         FrameworkInfo frameworkInfo, SlaveInfo slaveInfo) {
     LOG.info("Executor registered with the slave");
 
+    Configuration c = new Configuration(false);
     conf = new JobConf();
-
     // Get TaskTracker's config options from environment variables set by the
     // JobTracker.
     if (executorInfo.getCommand().hasEnvironment()) {
       for (Variable variable : executorInfo.getCommand().getEnvironment()
           .getVariablesList()) {
-        LOG.info("Setting config option : " + variable.getName() + " to "
-            + variable.getValue());
-        conf.set(variable.getName(), variable.getValue());
+        if (variable.getName().equals(Constants.HADOOP_MESOS_CONF_STRING)) {
+          LOG.info("CONVERTED: " + variable.getValue());
+          try {
+            byte[] base64 = Base64.decodeBase64(variable.getValue());
+            c.readFields(new DataInputStream(new ByteArrayInputStream(base64)));
+          } catch (IOException e) {
+            e.printStackTrace();
+          }
+
+          for (Map.Entry<String, String> entry : c) {
+            LOG.info("Setting: " + entry.getKey() + " -> " + entry.getValue());
+            conf.set(entry.getKey(), entry.getValue());
+          }
+
+          try {
+            StringWriter sw = new StringWriter();
+            String xmlString = null;
+            conf.writeXml(sw);
+            sw.flush();
+            xmlString = sw.getBuffer().toString();
+            LOG.info("XML Configuration received:\n" +
+                org.apache.mesos.hadoop.Utils.formatXml(xmlString));
+          } catch (TransformerException e) {
+            LOG.fatal("Error, received invalid XML:\n"
+                + variable.getValue(), e);
+            System.exit(1);
+          } catch (IOException e) {
+            e.printStackTrace();
+          }
+        }
       }
     }
 
@@ -60,7 +93,9 @@ public class MesosExecutor implements Executor {
         TaskTracker.class.getClassLoader());
 
     try {
+
       taskTracker = new TaskTracker(conf);
+
     } catch (IOException e) {
       LOG.fatal("Failed to start TaskTracker", e);
       System.exit(1);
@@ -136,10 +171,5 @@ public class MesosExecutor implements Executor {
   @Override
   public void shutdown(ExecutorDriver d) {
     LOG.info("Executor asked to shutdown");
-  }
-
-  public static void main(String[] args) {
-    MesosExecutorDriver driver = new MesosExecutorDriver(new MesosExecutor());
-    System.exit(driver.run() == Status.DRIVER_STOPPED ? 0 : 1);
   }
 }

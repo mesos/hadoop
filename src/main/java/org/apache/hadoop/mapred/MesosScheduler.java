@@ -1,56 +1,31 @@
 package org.apache.hadoop.mapred;
 
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.Iterator;
-import java.util.concurrent.ConcurrentHashMap;
-
+import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.httpclient.HttpHost;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.mapreduce.TaskType;
 import org.apache.hadoop.mapreduce.server.jobtracker.TaskTracker;
 import org.apache.hadoop.mapreduce.TaskType;
 import org.apache.mesos.MesosSchedulerDriver;
 import org.apache.mesos.Protos;
-import org.apache.mesos.Protos.CommandInfo;
-import org.apache.mesos.Protos.ExecutorID;
-import org.apache.mesos.Protos.ExecutorInfo;
-import org.apache.mesos.Protos.FrameworkID;
-import org.apache.mesos.Protos.FrameworkInfo;
-import org.apache.mesos.Protos.MasterInfo;
-import org.apache.mesos.Protos.Offer;
-import org.apache.mesos.Protos.OfferID;
-import org.apache.mesos.Protos.Resource;
-import org.apache.mesos.Protos.SlaveID;
+import org.apache.mesos.Protos.*;
 import org.apache.mesos.Protos.TaskID;
-import org.apache.mesos.Protos.TaskInfo;
-import org.apache.mesos.Protos.TaskState;
-import org.apache.mesos.Protos.Value;
 import org.apache.mesos.Scheduler;
 import org.apache.mesos.SchedulerDriver;
+import org.apache.mesos.hadoop.*;
+
+import java.io.*;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.apache.hadoop.util.StringUtils.join;
 
 public class MesosScheduler extends TaskScheduler implements Scheduler {
   public static final Log LOG = LogFactory.getLog(MesosScheduler.class);
-
-  private SchedulerDriver driver;
-  private TaskScheduler taskScheduler;
-  private JobTracker jobTracker;
-  private Configuration conf;
-  private File stateFile;
 
   // This is the memory overhead for a jvm process. This needs to be added
   // to a jvm process's resource requirement, in addition to its heap size.
@@ -64,24 +39,23 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   private static final double SLOT_CPUS_DEFAULT = 1; // 1 cores.
   private static final int SLOT_DISK_DEFAULT = 1024; // 1 GB.
   private static final int SLOT_JVM_HEAP_DEFAULT = 1024; // 1024MB.
-
   private static final double TASKTRACKER_CPUS = 1.0; // 1 core.
   private static final int TASKTRACKER_MEM_DEFAULT = 1024; // 1 GB.
-
   // The default behavior in Hadoop is to use 4 slots per TaskTracker:
   private static final int MAP_SLOTS_DEFAULT = 2;
   private static final int REDUCE_SLOTS_DEFAULT = 2;
-
   // The amount of time to wait for task trackers to launch before
   // giving up.
   private static final long LAUNCH_TIMEOUT_MS = 300000; // 5 minutes
-
+  private SchedulerDriver driver;
+  private TaskScheduler taskScheduler;
+  private JobTracker jobTracker;
+  private Configuration conf;
+  private File stateFile;
   // Count of the launched trackers for TaskID generation.
   private long launchedTrackers = 0;
-
   // Use a fixed slot allocation policy?
   private boolean policyIsFixed = false;
-
   private ResourcePolicy policy;
 
   // Maintains a mapping from {tracker host:port -> MesosTracker}.
@@ -132,7 +106,8 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     }
   };
 
-  public MesosScheduler() {}
+  public MesosScheduler() {
+  }
 
   // TaskScheduler methods.
   @Override
@@ -172,7 +147,7 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
         .setCheckpoint(conf.getBoolean("mapred.mesos.checkpoint", false))
         .setRole(conf.get("mapred.mesos.role", "*"))
         .setName("Hadoop: (RPC port: " + jobTracker.port + ","
-            + " WebUI port: " + jobTracker.infoPort + ")").build();
+                 + " WebUI port: " + jobTracker.infoPort + ")").build();
 
       driver = new MesosSchedulerDriver(this, frameworkInfo, master);
       driver.start();
@@ -261,14 +236,14 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   // atomic operations as needed.
   @Override
   public synchronized void registered(SchedulerDriver schedulerDriver,
-      FrameworkID frameworkID, MasterInfo masterInfo) {
+                                      FrameworkID frameworkID, MasterInfo masterInfo) {
     LOG.info("Registered as " + frameworkID.getValue()
         + " with master " + masterInfo);
   }
 
   @Override
   public synchronized void reregistered(SchedulerDriver schedulerDriver,
-      MasterInfo masterInfo) {
+                                        MasterInfo masterInfo) {
     LOG.info("Re-registered with master " + masterInfo);
   }
 
@@ -305,51 +280,97 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     return pendingTasks;
   }
 
+  // This method uses explicit synchronization in order to avoid deadlocks when
+  // accessing the JobTracker.
+  @Override
+  public void resourceOffers(SchedulerDriver schedulerDriver,
+                             List<Offer> offers) {
+    policy.resourceOffers(schedulerDriver, offers);
+  }
+
+  @Override
+  public synchronized void offerRescinded(SchedulerDriver schedulerDriver,
+                                          OfferID offerID) {
+    LOG.warn("Rescinded offer: " + offerID.getValue());
+  }
+
+  @Override
+  public synchronized void statusUpdate(SchedulerDriver schedulerDriver,
+                                        Protos.TaskStatus taskStatus) {
+    LOG.info("Status update of " + taskStatus.getTaskId().getValue()
+        + " to " + taskStatus.getState().name()
+        + " with message " + taskStatus.getMessage());
+
+    // Remove the TaskTracker if the corresponding Mesos task has reached a
+    // terminal state.
+    switch (taskStatus.getState()) {
+      case TASK_FINISHED:
+      case TASK_FAILED:
+      case TASK_KILLED:
+      case TASK_LOST:
+        // Make a copy to iterate over keys and delete values.
+        Set<HttpHost> trackers = new HashSet<HttpHost>(mesosTrackers.keySet());
+
+        // Remove the task from the map.
+        for (HttpHost tracker : trackers) {
+          if (mesosTrackers.get(tracker).taskId.equals(taskStatus.getTaskId())) {
+            LOG.info("Removing terminated TaskTracker: " + tracker);
+            mesosTrackers.get(tracker).timer.cancel();
+            mesosTrackers.remove(tracker);
+          }
+        }
+        break;
+      case TASK_STAGING:
+      case TASK_STARTING:
+      case TASK_RUNNING:
+        break;
+      default:
+        LOG.error("Unexpected TaskStatus: " + taskStatus.getState().name());
+        break;
+    }
+  }
+
+  @Override
+  public synchronized void frameworkMessage(SchedulerDriver schedulerDriver,
+                                            ExecutorID executorID, SlaveID slaveID, byte[] bytes) {
+    LOG.info("Framework Message of " + bytes.length + " bytes"
+        + " from executor " + executorID.getValue()
+        + " on slave " + slaveID.getValue());
+  }
+
+  @Override
+  public synchronized void disconnected(SchedulerDriver schedulerDriver) {
+    LOG.warn("Disconnected from Mesos master.");
+  }
+
+  @Override
+  public synchronized void slaveLost(SchedulerDriver schedulerDriver,
+                                     SlaveID slaveID) {
+    LOG.warn("Slave lost: " + slaveID.getValue());
+  }
+
+  @Override
+  public synchronized void executorLost(SchedulerDriver schedulerDriver,
+                                        ExecutorID executorID, SlaveID slaveID, int status) {
+    LOG.warn("Executor " + executorID.getValue()
+        + " lost with status " + status + " on slave " + slaveID);
+  }
+
+  @Override
+  public synchronized void error(SchedulerDriver schedulerDriver, String s) {
+    LOG.error("Error from scheduler driver: " + s);
+  }
+
   private class ResourcePolicy {
     public volatile MesosScheduler scheduler;
-
     public int neededMapSlots;
     public int neededReduceSlots;
     public long slots, mapSlots, reduceSlots;
     public int mapSlotsMax, reduceSlotsMax;
-
-    public ResourcePolicy(MesosScheduler scheduler) {
-      this.scheduler = scheduler;
-
-      mapSlotsMax = conf.getInt("mapred.tasktracker.map.tasks.maximum",
-          MAP_SLOTS_DEFAULT);
-      reduceSlotsMax =
-        conf.getInt("mapred.tasktracker.reduce.tasks.maximum",
-            REDUCE_SLOTS_DEFAULT);
-
-      slotCpus = conf.getFloat("mapred.mesos.slot.cpus",
-          (float) SLOT_CPUS_DEFAULT);
-      slotDisk = conf.getInt("mapred.mesos.slot.disk",
-          SLOT_DISK_DEFAULT);
-
-      slotMem = conf.getInt("mapred.mesos.slot.mem",
-          SLOT_JVM_HEAP_DEFAULT);
-      slotJVMHeap = Math.round((double)slotMem /
-          (JVM_MEM_OVERHEAD_PERCENT_DEFAULT + 1));
-
-      childOpts = conf.get("mapred.child.java.opts");
-
-      tasktrackerMem = conf.getInt("mapred.mesos.tasktracker.mem",
-          TASKTRACKER_MEM_DEFAULT);
-      tasktrackerJVMHeap = Math.round((double)tasktrackerMem /
-          (JVM_MEM_OVERHEAD_PERCENT_DEFAULT + 1));
-
-      containerCpus = TASKTRACKER_CPUS;
-      containerMem = tasktrackerMem;
-      containerDisk = 0;
-
-    }
-
     double slotCpus;
     double slotDisk;
     int slotMem;
     long slotJVMHeap;
-    String childOpts;
     int tasktrackerMem;
     long tasktrackerJVMHeap;
 
@@ -358,13 +379,42 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     double containerCpus;
     double containerMem;
     double containerDisk;
-
     double cpus;
     double mem;
     double disk;
 
+    public ResourcePolicy(MesosScheduler scheduler) {
+      this.scheduler = scheduler;
+
+      mapSlotsMax = conf.getInt("mapred.tasktracker.map.tasks.maximum",
+          MAP_SLOTS_DEFAULT);
+      reduceSlotsMax =
+          conf.getInt("mapred.tasktracker.reduce.tasks.maximum",
+              REDUCE_SLOTS_DEFAULT);
+
+      slotCpus = conf.getFloat("mapred.mesos.slot.cpus",
+          (float) SLOT_CPUS_DEFAULT);
+      slotDisk = conf.getInt("mapred.mesos.slot.disk",
+          SLOT_DISK_DEFAULT);
+
+      slotMem = conf.getInt("mapred.mesos.slot.mem",
+          SLOT_JVM_HEAP_DEFAULT);
+      slotJVMHeap = Math.round((double) slotMem /
+          (JVM_MEM_OVERHEAD_PERCENT_DEFAULT + 1));
+
+      tasktrackerMem = conf.getInt("mapred.mesos.tasktracker.mem",
+          TASKTRACKER_MEM_DEFAULT);
+      tasktrackerJVMHeap = Math.round((double) tasktrackerMem /
+          (JVM_MEM_OVERHEAD_PERCENT_DEFAULT + 1));
+
+      containerCpus = TASKTRACKER_CPUS;
+      containerMem = tasktrackerMem;
+      containerDisk = 0;
+
+    }
+
     public void computeNeededSlots(List<JobInProgress> jobsInProgress,
-        Collection<TaskTrackerStatus> taskTrackers) {
+                                   Collection<TaskTrackerStatus> taskTrackers) {
       // Compute the number of pending maps and reduces.
       int pendingMaps = 0;
       int pendingReduces = 0;
@@ -425,24 +475,24 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
           minimumMapSlots - (idleMapSlots + inactiveMapSlots),
           pendingMaps - (idleMapSlots + inactiveMapSlots));
       neededReduceSlots = Math.max(
-          minimumReduceSlots  - (idleReduceSlots + inactiveReduceSlots),
+          minimumReduceSlots - (idleReduceSlots + inactiveReduceSlots),
           pendingReduces - (idleReduceSlots + inactiveReduceSlots));
 
       LOG.info(join("\n", Arrays.asList(
-              "JobTracker Status",
-              "      Pending Map Tasks: " + pendingMaps,
-              "   Pending Reduce Tasks: " + pendingReduces,
-              "      Running Map Tasks: " + runningMaps,
-              "   Running Reduce Tasks: " + runningReduces,
-              "         Idle Map Slots: " + idleMapSlots,
-              "      Idle Reduce Slots: " + idleReduceSlots,
-              "     Inactive Map Slots: " + inactiveMapSlots
+          "JobTracker Status",
+          "      Pending Map Tasks: " + pendingMaps,
+          "   Pending Reduce Tasks: " + pendingReduces,
+          "      Running Map Tasks: " + runningMaps,
+          "   Running Reduce Tasks: " + runningReduces,
+          "         Idle Map Slots: " + idleMapSlots,
+          "      Idle Reduce Slots: " + idleReduceSlots,
+          "     Inactive Map Slots: " + inactiveMapSlots
               + " (launched but no hearbeat yet)",
-              "  Inactive Reduce Slots: " + inactiveReduceSlots
+          "  Inactive Reduce Slots: " + inactiveReduceSlots
               + " (launched but no hearbeat yet)",
-              "       Needed Map Slots: " + neededMapSlots,
-              "    Needed Reduce Slots: " + neededReduceSlots,
-              "     Unhealthy Trackers: " + unhealthyTrackers)));
+          "       Needed Map Slots: " + neededMapSlots,
+          "    Needed Reduce Slots: " + neededReduceSlots,
+          "     Unhealthy Trackers: " + unhealthyTrackers)));
 
       if (stateFile != null) {
         // Update state file
@@ -481,13 +531,15 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     // This method computes the number of slots to launch for this offer, and
     // returns true if the offer is sufficient.
     // Must be overridden.
-    public boolean computeSlots() { return false; }
+    public boolean computeSlots() {
+      return false;
+    }
 
     public void resourceOffers(SchedulerDriver schedulerDriver,
-        List<Offer> offers) {
+                               List<Offer> offers) {
       // Before synchronizing, we pull all needed information from the JobTracker.
       final HttpHost jobTrackerAddress =
-        new HttpHost(jobTracker.getHostname(), jobTracker.getTrackerPort());
+          new HttpHost(jobTracker.getHostname(), jobTracker.getTrackerPort());
 
       final Collection<TaskTrackerStatus> taskTrackers = jobTracker.taskTrackers();
 
@@ -559,13 +611,13 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
 
           if (!sufficient || ports.size() < 2) {
             LOG.info(join("\n", Arrays.asList(
-                    "Declining offer with insufficient resources for a TaskTracker: ",
-                    "  cpus: offered " + cpus + " needed at least " + taskCpus,
-                    "  mem : offered " + mem + " needed at least " + taskMem,
-                    "  disk: offered " + disk + " needed at least " + taskDisk,
-                    "  ports: " + (ports.size() < 2
-                      ? " less than 2 offered"
-                      : " at least 2 (sufficient)"))));
+                "Declining offer with insufficient resources for a TaskTracker: ",
+                "  cpus: offered " + cpus + " needed at least " + taskCpus,
+                "  mem : offered " + mem + " needed at least " + taskMem,
+                "  disk: offered " + disk + " needed at least " + taskDisk,
+                "  ports: " + (ports.size() < 2
+                    ? " less than 2 offered"
+                    : " at least 2 (sufficient)"))));
 
             schedulerDriver.declineOffer(offer.getId());
             continue;
@@ -584,74 +636,93 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
           // TODO(brenden): Diagnose this to determine root cause.
           if (mesosTrackers.containsKey(httpAddress)) {
             LOG.info(join("\n", Arrays.asList(
-                    "Declining offer because host/port combination is in use: ",
-                    "  cpus: offered " + cpus + " needed " + taskCpus,
-                    "  mem : offered " + mem + " needed " + taskMem,
-                    "  disk: offered " + disk + " needed " + taskDisk,
-                    "  ports: " + ports)));
+                "Declining offer because host/port combination is in use: ",
+                "  cpus: offered " + cpus + " needed " + taskCpus,
+                "  mem : offered " + mem + " needed " + taskMem,
+                "  disk: offered " + disk + " needed " + taskDisk,
+                "  ports: " + ports)));
 
             schedulerDriver.declineOffer(offer.getId());
             continue;
           }
 
           TaskID taskId = TaskID.newBuilder()
-            .setValue("Task_Tracker_" + launchedTrackers++).build();
+              .setValue("Task_Tracker_" + launchedTrackers++).build();
 
           LOG.info("Launching task " + taskId.getValue() + " on "
               + httpAddress.toString() + " with mapSlots=" + mapSlots + " reduceSlots=" + reduceSlots);
 
           // Add this tracker to Mesos tasks.
           mesosTrackers.put(httpAddress, new MesosTracker(httpAddress, taskId,
-                mapSlots, reduceSlots, scheduler));
+              mapSlots, reduceSlots, scheduler));
 
           // Create the environment depending on whether the executor is going to be
           // run locally.
           // TODO(vinod): Do not pass the mapred config options as environment
           // variables.
+
+          Configuration overrides = new Configuration(conf);
+
+          overrides.set("mapred.job.tracker",
+              jobTrackerAddress.getHostName() + ':' + jobTrackerAddress.getPort());
+
+          overrides.set("mapred.task.tracker.http.address",
+              httpAddress.getHostName() + ':' + httpAddress.getPort());
+
+          overrides.set("mapred.task.tracker.report.address",
+              reportAddress.getHostName() + ':' + reportAddress.getPort());
+
+          overrides.set("mapred.child.java.opts",
+              conf.get("mapred.child.java.opts") +
+              " -XX:+UseParallelGC -Xmx" + slotJVMHeap + "m");
+
+          overrides.set("mapred.map.child.java.opts",
+              conf.get("mapred.map.child.java.opts") +
+              " -XX:+UseParallelGC -Xmx" + slotJVMHeap + "m");
+
+          overrides.set("mapred.reduce.child.java.opts",
+              conf.get("mapred.reduce.child.java.opts") +
+              " -XX:+UseParallelGC -Xmx" + slotJVMHeap + "m");
+
+          overrides.setLong("mapred.tasktracker.map.tasks.maximum",
+              mapSlots);
+
+          overrides.setLong("mapred.tasktracker.reduce.tasks.maximum",
+              reduceSlots);
+
+          StringWriter sw = new StringWriter();
+          String xmlString = null;
+          try {
+            overrides.writeXml(sw);
+            xmlString = sw.getBuffer().toString();
+            LOG.info("Configuration: " + org.apache.mesos.hadoop.Utils.formatXml(xmlString));
+          } catch (Exception e) {
+            LOG.warn("Malformed XML.", e);
+            System.exit(1);
+          }
+
+          ByteArrayOutputStream baos = new ByteArrayOutputStream();
+          try {
+            overrides.write(new DataOutputStream(baos));
+            baos.flush();
+          } catch (IOException e) {
+            LOG.warn(e);
+            e.printStackTrace();
+          }
+
+          byte[] data = baos.toByteArray();
+          String converted = Base64.encodeBase64String(data);
+
           Protos.Environment.Builder envBuilder = Protos.Environment
-            .newBuilder()
-            .addVariables(
-                Protos.Environment.Variable
-                .newBuilder()
-                .setName("mapred.job.tracker")
-                .setValue(jobTrackerAddress.getHostName() + ':'
-                  + jobTrackerAddress.getPort()))
-            .addVariables(
-                Protos.Environment.Variable
-                .newBuilder()
-                .setName("mapred.task.tracker.http.address")
-                .setValue(
-                  httpAddress.getHostName() + ':' + httpAddress.getPort()))
-            .addVariables(
-                Protos.Environment.Variable
-                .newBuilder()
-                .setName("mapred.task.tracker.report.address")
-                .setValue(reportAddress.getHostName() + ':'
-                  + reportAddress.getPort()))
-            .addVariables(
-                Protos.Environment.Variable.newBuilder()
-                .setName("mapred.child.java.opts")
-                .setValue(childOpts + " -XX:+UseParallelGC -Xmx" + slotJVMHeap + "m"))
-            .addVariables(
-                Protos.Environment.Variable.newBuilder()
-                .setName("mapred.map.child.java.opts")
-                .setValue("-XX:+UseParallelGC -Xmx" + slotJVMHeap + "m"))
-            .addVariables(
-                Protos.Environment.Variable.newBuilder()
-                .setName("mapred.reduce.child.java.opts")
-                .setValue("-XX:+UseParallelGC -Xmx" + slotJVMHeap + "m"))
-            .addVariables(
-                Protos.Environment.Variable.newBuilder()
-                .setName("HADOOP_HEAPSIZE")
-                .setValue("" + tasktrackerJVMHeap))
-            .addVariables(
-                Protos.Environment.Variable.newBuilder()
-                .setName("mapred.tasktracker.map.tasks.maximum")
-                .setValue("" + mapSlots))
-            .addVariables(
-                Protos.Environment.Variable.newBuilder()
-                .setName("mapred.tasktracker.reduce.tasks.maximum")
-                .setValue("" + reduceSlots));
+              .newBuilder()
+              .addVariables(
+                  Protos.Environment.Variable.newBuilder()
+                      .setName("HADOOP_HEAPSIZE")
+                      .setValue("" + tasktrackerJVMHeap))
+              .addVariables(
+                  Protos.Environment.Variable.newBuilder()
+                      .setName(Constants.HADOOP_MESOS_CONF_STRING)
+                      .setValue(converted));
 
           // Set java specific environment, appropriately.
           Map<String, String> env = System.getenv();
@@ -674,19 +745,36 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
           if (master.equals("local")) {
             try {
               commandInfo = CommandInfo.newBuilder()
-                .setEnvironment(envBuilder)
-                .setValue(new File("bin/mesos-executor").getCanonicalPath())
-                .build();
+                  .setEnvironment(envBuilder)
+                  .setValue(new File("bin/mesos-executor").getCanonicalPath())
+                  .build();
             } catch (IOException e) {
               LOG.fatal("Failed to find Mesos executor ", e);
               System.exit(1);
             }
           } else {
-            String uri = conf.get("mapred.mesos.executor");
+            String uri = conf.get("mapred.mesos.executor.uri");
+            if (uri == null) {
+              throw new RuntimeException(
+                  "Expecting configuration property 'mapred.mesos.executor'");
+            }
+
+            String directory = conf.get("mapred.mesos.executor.directory");
+            if (directory == null || directory.equals("")) {
+              LOG.info("URI: " + uri + ", name: " + new File(uri).getName());
+
+              directory = new File(uri).getName().split("\\.")[0] + "*";
+            }
+
+            String command = conf.get("mapred.mesos.executor.command");
+            if (command == null || command.equals("")) {
+              command = "echo $(env) ; " +
+                  " ./bin/hadoop  org.apache.hadoop.mapred.MesosExecutor";
+            }
+
             commandInfo = CommandInfo.newBuilder()
               .setEnvironment(envBuilder)
-              .setValue("cd hadoop-* && " +
-                  "./bin/hadoop org.apache.hadoop.mapred.MesosExecutor")
+              .setValue(String.format("cd %s && %s", directory, command))
               .addUris(CommandInfo.URI.newBuilder().setValue(uri)).build();
           }
 
@@ -788,9 +876,9 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
       reduceSlots = reduceSlotsMax;
 
       slots = Integer.MAX_VALUE;
-      slots = (int)Math.min(slots, (cpus - containerCpus) / slotCpus);
-      slots = (int)Math.min(slots, (mem - containerMem) / slotMem);
-      slots = (int)Math.min(slots, (disk - containerDisk) / slotDisk);
+      slots = (int) Math.min(slots, (cpus - containerCpus) / slotCpus);
+      slots = (int) Math.min(slots, (mem - containerMem) / slotMem);
+      slots = (int) Math.min(slots, (disk - containerDisk) / slotDisk);
 
       // Is this offer too small for even the minimum slots?
       if (slots < mapSlots + reduceSlots || slots < 1) {
@@ -816,9 +904,9 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
 
       // Determine how many slots we can allocate.
       int slots = mapSlotsMax + reduceSlotsMax;
-      slots = (int)Math.min(slots, (cpus - containerCpus) / slotCpus);
-      slots = (int)Math.min(slots, (mem - containerMem) / slotMem);
-      slots = (int)Math.min(slots, (disk - containerDisk) / slotDisk);
+      slots = (int) Math.min(slots, (cpus - containerCpus) / slotCpus);
+      slots = (int) Math.min(slots, (mem - containerMem) / slotMem);
+      slots = (int) Math.min(slots, (disk - containerDisk) / slotDisk);
 
       // Is this offer too small for even the minimum slots?
       if (slots < 1) {
@@ -833,8 +921,8 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
         reduceSlots = neededReduceSlots;
       } else {
         // Allocate slots fairly for this resource offer.
-        double mapFactor = (double)neededMapSlots / (neededMapSlots + neededReduceSlots);
-        double reduceFactor = (double)neededReduceSlots / (neededMapSlots + neededReduceSlots);
+        double mapFactor = (double) neededMapSlots / (neededMapSlots + neededReduceSlots);
+        double reduceFactor = (double) neededReduceSlots / (neededMapSlots + neededReduceSlots);
         // To avoid map/reduce slot starvation, don't allow more than 50%
         // spread between map/reduce slots when we need both mappers and
         // reducers.
@@ -860,87 +948,6 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     }
   }
 
-  // This method uses explicit synchronization in order to avoid deadlocks when
-  // accessing the JobTracker.
-  @Override
-  public void resourceOffers(SchedulerDriver schedulerDriver,
-      List<Offer> offers) {
-      policy.resourceOffers(schedulerDriver, offers);
-  }
-
-  @Override
-  public synchronized void offerRescinded(SchedulerDriver schedulerDriver,
-      OfferID offerID) {
-    LOG.warn("Rescinded offer: " + offerID.getValue());
-  }
-
-  @Override
-  public synchronized void statusUpdate(SchedulerDriver schedulerDriver,
-      Protos.TaskStatus taskStatus) {
-    LOG.info("Status update of " + taskStatus.getTaskId().getValue()
-        + " to " + taskStatus.getState().name()
-        + " with message " + taskStatus.getMessage());
-
-    // Remove the TaskTracker if the corresponding Mesos task has reached a
-    // terminal state.
-    switch (taskStatus.getState()) {
-      case TASK_FINISHED:
-      case TASK_FAILED:
-      case TASK_KILLED:
-      case TASK_LOST:
-        // Make a copy to iterate over keys and delete values.
-        Set<HttpHost> trackers = new HashSet<HttpHost>(mesosTrackers.keySet());
-
-        // Remove the task from the map.
-        for (HttpHost tracker : trackers) {
-          if (mesosTrackers.get(tracker).taskId.equals(taskStatus.getTaskId())) {
-            LOG.info("Removing terminated TaskTracker: " + tracker);
-            mesosTrackers.get(tracker).timer.cancel();
-            mesosTrackers.remove(tracker);
-          }
-        }
-        break;
-      case TASK_STAGING:
-      case TASK_STARTING:
-      case TASK_RUNNING:
-        break;
-      default:
-        LOG.error("Unexpected TaskStatus: " + taskStatus.getState().name());
-        break;
-    }
-  }
-
-  @Override
-  public synchronized void frameworkMessage(SchedulerDriver schedulerDriver,
-      ExecutorID executorID, SlaveID slaveID, byte[] bytes) {
-    LOG.info("Framework Message of " + bytes.length + " bytes"
-        + " from executor " + executorID.getValue()
-        + " on slave " + slaveID.getValue());
-  }
-
-  @Override
-  public synchronized void disconnected(SchedulerDriver schedulerDriver) {
-    LOG.warn("Disconnected from Mesos master.");
-  }
-
-  @Override
-  public synchronized void slaveLost(SchedulerDriver schedulerDriver,
-      SlaveID slaveID) {
-    LOG.warn("Slave lost: " + slaveID.getValue());
-  }
-
-  @Override
-  public synchronized void executorLost(SchedulerDriver schedulerDriver,
-      ExecutorID executorID, SlaveID slaveID, int status) {
-    LOG.warn("Executor " + executorID.getValue()
-        + " lost with status " + status + " on slave " + slaveID);
-  }
-
-  @Override
-  public synchronized void error(SchedulerDriver schedulerDriver, String s) {
-    LOG.error("Error from scheduler driver: " + s);
-  }
-
   /**
    * Used to track the our launched TaskTrackers.
    */
@@ -957,7 +964,7 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     public Set<JobID> jobs = new HashSet<JobID>();
 
     public MesosTracker(HttpHost host, TaskID taskId, long mapSlots,
-        long reduceSlots, MesosScheduler scheduler) {
+                        long reduceSlots, MesosScheduler scheduler) {
       this.host = host;
       this.taskId = taskId;
       this.mapSlots = mapSlots;
@@ -988,7 +995,7 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
             }
 
             LOG.warn("Tracker " + MesosTracker.this.host + " failed to launch within " +
-              LAUNCH_TIMEOUT_MS / 1000 + " seconds, killing it");
+                     LAUNCH_TIMEOUT_MS / 1000 + " seconds, killing it");
             MesosTracker.this.scheduler.killTracker(MesosTracker.this);
           }
         }
