@@ -16,6 +16,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.server.jobtracker.TaskTracker;
+import org.apache.hadoop.mapreduce.TaskType;
 import org.apache.mesos.MesosSchedulerDriver;
 import org.apache.mesos.Protos;
 import org.apache.mesos.Protos.CommandInfo;
@@ -271,14 +272,41 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     LOG.info("Re-registered with master " + masterInfo);
   }
 
+  // For some reason, pendingMaps() and pendingReduces() doesn't return the
+  // actual number we're looking for (presumably for some legacy
+  // backward-compat reasons).  Below is the algorithm that is used to
+  // calculate the pending tasks within the Hadoop JobTracker sources (see
+  // 'printTaskSummary' in src/org/apache/hadoop/mapred/jobdetails_jsp.java).
+  private int getPendingTasks(TaskInProgress[] tasks) {
+    int totalTasks = tasks.length;
+    int runningTasks = 0;
+    int finishedTasks = 0;
+    int killedTasks = 0;
+    for (int i = 0; i < totalTasks; ++i) {
+      TaskInProgress task = tasks[i];
+      if (task == null) {
+	continue;
+      }
+      if (task.isComplete()) {
+        finishedTasks += 1;
+      } else if (task.isRunning()) {
+        runningTasks += 1;
+      } else if (task.wasKilled()) {
+        killedTasks += 1;
+      }
+    }
+    int pendingTasks = totalTasks - runningTasks - killedTasks - finishedTasks;
+    return pendingTasks;
+  }
+
   // This method uses explicit synchronization in order to avoid deadlocks when
   // accessing the JobTracker.
   @Override
   public void resourceOffers(SchedulerDriver schedulerDriver,
       List<Offer> offers) {
     // Before synchronizing, we pull all needed information from the JobTracker.
-    final HttpHost jobTrackerAddress = new HttpHost(jobTracker.getHostname(),
-        jobTracker.getTrackerPort());
+    final HttpHost jobTrackerAddress =
+      new HttpHost(jobTracker.getHostname(), jobTracker.getTrackerPort());
 
     final Collection<TaskTrackerStatus> taskTrackers = jobTracker.taskTrackers();
 
@@ -292,14 +320,24 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
       int pendingMaps = 0;
       int pendingReduces = 0;
       for (JobInProgress progress : jobsInProgress) {
-        pendingMaps += progress.pendingMaps();
-        pendingReduces += progress.pendingReduces();
+        // JobStatus.pendingMaps/Reduces may return the wrong value on
+        // occasion.  This seems to be safer.
+        pendingMaps += getPendingTasks(progress.getTasks(TaskType.MAP));
+        pendingReduces += getPendingTasks(progress.getTasks(TaskType.REDUCE));
       }
 
       // Mark active (heartbeated) TaskTrackers and compute idle slots.
       int idleMapSlots = 0;
       int idleReduceSlots = 0;
+      int unhealthyTrackers = 0;
+
       for (TaskTrackerStatus status : taskTrackers) {
+        if (!status.getHealthStatus().isNodeHealthy()) {
+          // Skip this node if it's unhealthy.
+          ++unhealthyTrackers;
+          continue;
+        }
+
         HttpHost host = new HttpHost(status.getHost(), status.getHttpPort());
         if (mesosTrackers.containsKey(host)) {
           mesosTrackers.get(host).active = true;
@@ -324,17 +362,18 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
       int neededReduceSlots = Math.max(0, pendingReduces - idleReduceSlots);
 
       LOG.info(join("\n", Arrays.asList(
-          "JobTracker Status",
-          "      Pending Map Tasks: " + pendingMaps,
-          "   Pending Reduce Tasks: " + pendingReduces,
-          "         Idle Map Slots: " + idleMapSlots,
-          "      Idle Reduce Slots: " + idleReduceSlots,
-          "     Inactive Map Slots: " + inactiveMapSlots
-                                      + " (launched but no hearbeat yet)",
-          "  Inactive Reduce Slots: " + inactiveReduceSlots
-                                      + " (launched but no hearbeat yet)",
-          "       Needed Map Slots: " + neededMapSlots,
-          "    Needed Reduce Slots: " + neededReduceSlots)));
+              "JobTracker Status",
+              "      Pending Map Tasks: " + pendingMaps,
+              "   Pending Reduce Tasks: " + pendingReduces,
+              "         Idle Map Slots: " + idleMapSlots,
+              "      Idle Reduce Slots: " + idleReduceSlots,
+              "     Inactive Map Slots: " + inactiveMapSlots
+              + " (launched but no hearbeat yet)",
+              "  Inactive Reduce Slots: " + inactiveReduceSlots
+              + " (launched but no hearbeat yet)",
+              "       Needed Map Slots: " + neededMapSlots,
+              "    Needed Reduce Slots: " + neededReduceSlots,
+              "     Unhealthy Trackers: " + unhealthyTrackers)));
 
       // Launch TaskTrackers to satisfy the slot requirements.
       // TODO(bmahler): Consider slotting intelligently.
@@ -491,14 +530,9 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
           }
         } else {
           String uri = conf.get("mapred.mesos.executor");
-          if (uri == null) {
-            throw new RuntimeException(
-                "Expecting configuration property 'mapred.mesos.executor'");
-          }
-          String basename = new File(uri).getName().split(".")[0];
           commandInfo = CommandInfo.newBuilder()
               .setEnvironment(envBuilder)
-              .setValue("cd " + basename + "* && ./bin/mesos-executor")
+              .setValue("cd hadoop-* && ./bin/mesos-executor")
               .addUris(CommandInfo.URI.newBuilder().setValue(uri)).build();
         }
 
