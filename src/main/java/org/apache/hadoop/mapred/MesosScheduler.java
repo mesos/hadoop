@@ -739,43 +739,39 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
 
           // Command info differs when performing a local run.
           CommandInfo commandInfo = null;
-          String master = conf.get("mapred.mesos.master", "local");
+          String master = conf.get("mapred.mesos.master");
 
-          if (master.equals("local")) {
-            try {
-              commandInfo = CommandInfo.newBuilder()
-                  .setEnvironment(envBuilder)
-                  .setValue(new File("bin/mesos-executor").getCanonicalPath())
-                  .build();
-            } catch (IOException e) {
-              LOG.fatal("Failed to find Mesos executor ", e);
-              System.exit(1);
-            }
-          } else {
-            String uri = conf.get("mapred.mesos.executor.uri");
-            if (uri == null) {
-              throw new RuntimeException(
-                  "Expecting configuration property 'mapred.mesos.executor'");
-            }
-
-            String directory = conf.get("mapred.mesos.executor.directory");
-            if (directory == null || directory.equals("")) {
-              LOG.info("URI: " + uri + ", name: " + new File(uri).getName());
-
-              directory = new File(uri).getName().split("\\.")[0] + "*";
-            }
-
-            String command = conf.get("mapred.mesos.executor.command");
-            if (command == null || command.equals("")) {
-              command = "echo $(env) ; " +
-                  " ./bin/hadoop  org.apache.hadoop.mapred.MesosExecutor";
-            }
-
-            commandInfo = CommandInfo.newBuilder()
-              .setEnvironment(envBuilder)
-              .setValue(String.format("cd %s && %s", directory, command))
-              .addUris(CommandInfo.URI.newBuilder().setValue(uri)).build();
+          if (master == null) {
+            throw new RuntimeException(
+                "Expecting configuration property 'mapred.mesos.master'");
+          } else if (master == "local") {
+            throw new RuntimeException(
+                "Can not use 'local' for 'mapred.mesos.executor'");
           }
+
+          String uri = conf.get("mapred.mesos.executor.uri");
+          if (uri == null) {
+            throw new RuntimeException(
+                "Expecting configuration property 'mapred.mesos.executor'");
+          }
+
+          String directory = conf.get("mapred.mesos.executor.directory");
+          if (directory == null || directory.equals("")) {
+            LOG.info("URI: " + uri + ", name: " + new File(uri).getName());
+
+            directory = new File(uri).getName().split("\\.")[0] + "*";
+          }
+
+          String command = conf.get("mapred.mesos.executor.command");
+          if (command == null || command.equals("")) {
+            command = "echo $(env) ; " +
+              " ./bin/hadoop  org.apache.hadoop.mapred.MesosExecutor";
+          }
+
+          commandInfo = CommandInfo.newBuilder()
+            .setEnvironment(envBuilder)
+            .setValue(String.format("cd %s && %s", directory, command))
+            .addUris(CommandInfo.URI.newBuilder().setValue(uri)).build();
 
           TaskInfo info = TaskInfo
             .newBuilder()
