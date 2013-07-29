@@ -1,6 +1,7 @@
 package org.apache.hadoop.mapred;
 
-import org.apache.commons.codec.binary.Base64;
+import com.google.protobuf.ByteString;
+
 import org.apache.commons.httpclient.HttpHost;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -14,11 +15,8 @@ import org.apache.mesos.Protos.*;
 import org.apache.mesos.Protos.TaskID;
 import org.apache.mesos.Scheduler;
 import org.apache.mesos.SchedulerDriver;
-import org.apache.mesos.hadoop.*;
 
 import java.io.*;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -656,72 +654,13 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
           mesosTrackers.put(httpAddress, new MesosTracker(httpAddress, taskId,
               mapSlots, reduceSlots, scheduler));
 
-          // Create the environment depending on whether the executor is going to be
-          // run locally.
-          // TODO(vinod): Do not pass the mapred config options as environment
-          // variables.
-
-          Configuration overrides = new Configuration(conf);
-
-          overrides.set("mapred.job.tracker",
-              jobTrackerAddress.getHostName() + ':' + jobTrackerAddress.getPort());
-
-          overrides.set("mapred.task.tracker.http.address",
-              httpAddress.getHostName() + ':' + httpAddress.getPort());
-
-          overrides.set("mapred.task.tracker.report.address",
-              reportAddress.getHostName() + ':' + reportAddress.getPort());
-
-          overrides.set("mapred.child.java.opts",
-              conf.get("mapred.child.java.opts") +
-              " -XX:+UseParallelGC -Xmx" + slotJVMHeap + "m");
-
-          overrides.set("mapred.map.child.java.opts",
-              conf.get("mapred.map.child.java.opts") +
-              " -XX:+UseParallelGC -Xmx" + slotJVMHeap + "m");
-
-          overrides.set("mapred.reduce.child.java.opts",
-              conf.get("mapred.reduce.child.java.opts") +
-              " -XX:+UseParallelGC -Xmx" + slotJVMHeap + "m");
-
-          overrides.setLong("mapred.tasktracker.map.tasks.maximum",
-              mapSlots);
-
-          overrides.setLong("mapred.tasktracker.reduce.tasks.maximum",
-              reduceSlots);
-
-          StringWriter sw = new StringWriter();
-          String xmlString = null;
-          try {
-            overrides.writeXml(sw);
-            xmlString = sw.getBuffer().toString();
-            LOG.info("Configuration: " + org.apache.mesos.hadoop.Utils.formatXml(xmlString));
-          } catch (Exception e) {
-            LOG.warn("Malformed XML.", e);
-            System.exit(1);
-          }
-
-          ByteArrayOutputStream baos = new ByteArrayOutputStream();
-          try {
-            overrides.write(new DataOutputStream(baos));
-            baos.flush();
-          } catch (IOException e) {
-            LOG.warn("Failed to serialize configuration.", e);
-            System.exit(1);
-          }
-
-          String converted = Base64.encodeBase64String(baos.toByteArray());
-
+          // Set up the environment for running the TaskTracker.
           Protos.Environment.Builder envBuilder = Protos.Environment
               .newBuilder()
               .addVariables(
                   Protos.Environment.Variable.newBuilder()
                       .setName("HADOOP_HEAPSIZE")
-                      .setValue("" + tasktrackerJVMHeap))
-              .addVariables(
-                  Protos.Environment.Variable.newBuilder()
-                      .setName(Constants.HADOOP_MESOS_CONF_STRING)
-                      .setValue(converted));
+                      .setValue("" + tasktrackerJVMHeap));
 
           // Set java specific environment, appropriately.
           Map<String, String> env = System.getenv();
@@ -772,6 +711,48 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
             .setEnvironment(envBuilder)
             .setValue(String.format("cd %s && %s", directory, command))
             .addUris(CommandInfo.URI.newBuilder().setValue(uri)).build();
+
+          // Create a configuration from the current configuration and
+          // override properties as appropriate for the TaskTracker.
+          Configuration overrides = new Configuration(conf);
+
+          overrides.set("mapred.job.tracker",
+              jobTrackerAddress.getHostName() + ':' + jobTrackerAddress.getPort());
+
+          overrides.set("mapred.task.tracker.http.address",
+              httpAddress.getHostName() + ':' + httpAddress.getPort());
+
+          overrides.set("mapred.task.tracker.report.address",
+              reportAddress.getHostName() + ':' + reportAddress.getPort());
+
+          overrides.set("mapred.child.java.opts",
+              conf.get("mapred.child.java.opts") +
+              " -XX:+UseParallelGC -Xmx" + slotJVMHeap + "m");
+
+          overrides.set("mapred.map.child.java.opts",
+              conf.get("mapred.map.child.java.opts") +
+              " -XX:+UseParallelGC -Xmx" + slotJVMHeap + "m");
+
+          overrides.set("mapred.reduce.child.java.opts",
+              conf.get("mapred.reduce.child.java.opts") +
+              " -XX:+UseParallelGC -Xmx" + slotJVMHeap + "m");
+
+          overrides.setLong("mapred.tasktracker.map.tasks.maximum",
+              mapSlots);
+
+          overrides.setLong("mapred.tasktracker.reduce.tasks.maximum",
+              reduceSlots);
+
+          ByteArrayOutputStream baos = new ByteArrayOutputStream();
+          try {
+            overrides.write(new DataOutputStream(baos));
+            baos.flush();
+          } catch (IOException e) {
+            LOG.warn("Failed to serialize configuration.", e);
+            System.exit(1);
+          }
+
+          byte[] bytes = baos.toByteArray();
 
           TaskInfo info = TaskInfo
             .newBuilder()
@@ -835,9 +816,10 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
                   .setName("mem")
                   .setType(Value.Type.SCALAR)
                   .setRole(memRole)
-                  .setScalar(Value.Scalar.newBuilder().setValue(
-                      (containerMem)))).setCommand(commandInfo))
-                      .build();
+                  .setScalar(Value.Scalar.newBuilder().setValue(containerMem))))
+            .setCommand(commandInfo)
+            .setData(ByteString.copyFrom(bytes))
+            .build();
 
           schedulerDriver.launchTasks(offer.getId(), Arrays.asList(info));
 
