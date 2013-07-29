@@ -168,7 +168,7 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     try {
       FrameworkInfo frameworkInfo = FrameworkInfo
         .newBuilder()
-        .setUser("")
+        .setUser("") // Let Mesos fill in the user.
         .setCheckpoint(conf.getBoolean("mapred.mesos.checkpoint", false))
         .setRole(conf.get("mapred.mesos.role", "*"))
         .setName("Hadoop: (RPC port: " + jobTracker.port + ","
@@ -332,6 +332,8 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
       slotJVMHeap = Math.round((double)slotMem /
           (JVM_MEM_OVERHEAD_PERCENT_DEFAULT + 1));
 
+      childOpts = conf.get("mapred.child.java.opts");
+
       tasktrackerMem = conf.getInt("mapred.mesos.tasktracker.mem",
           TASKTRACKER_MEM_DEFAULT);
       tasktrackerJVMHeap = Math.round((double)tasktrackerMem /
@@ -347,6 +349,7 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     double slotDisk;
     int slotMem;
     long slotJVMHeap;
+    String childOpts;
     int tasktrackerMem;
     long tasktrackerJVMHeap;
 
@@ -479,7 +482,6 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     // returns true if the offer is sufficient.
     // Must be overridden.
     public boolean computeSlots() { return false; }
-
 
     public void resourceOffers(SchedulerDriver schedulerDriver,
         List<Offer> offers) {
@@ -629,7 +631,7 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
             .addVariables(
                 Protos.Environment.Variable.newBuilder()
                 .setName("mapred.child.java.opts")
-                .setValue("-XX:+UseParallelGC -Xmx" + slotJVMHeap + "m"))
+                .setValue(childOpts + " -XX:+UseParallelGC -Xmx" + slotJVMHeap + "m"))
             .addVariables(
                 Protos.Environment.Variable.newBuilder()
                 .setName("mapred.map.child.java.opts")
@@ -670,11 +672,15 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
           String master = conf.get("mapred.mesos.master", "local");
 
           if (master.equals("local")) {
-            commandInfo = CommandInfo.newBuilder()
-              .setEnvironment(envBuilder)
-              .setValue(new File("bin/hadoop").getCanonicalPath() +
-                  " org.apache.hadoop.mapred.MesosExecutor")
-              .build();
+            try {
+              commandInfo = CommandInfo.newBuilder()
+                .setEnvironment(envBuilder)
+                .setValue(new File("bin/mesos-executor").getCanonicalPath())
+                .build();
+            } catch (IOException e) {
+              LOG.fatal("Failed to find Mesos executor ", e);
+              System.exit(1);
+            }
           } else {
             String uri = conf.get("mapred.mesos.executor");
             commandInfo = CommandInfo.newBuilder()
