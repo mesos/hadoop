@@ -1,6 +1,5 @@
 package org.apache.hadoop.mapred;
 
-import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -11,17 +10,14 @@ import org.apache.mesos.Protos.Environment.Variable;
 import org.apache.mesos.Protos.*;
 import org.apache.mesos.Protos.TaskID;
 import org.apache.mesos.Protos.TaskStatus;
-import org.apache.mesos.hadoop.Constants;
 
 import javax.xml.transform.TransformerException;
 import java.io.*;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 public class MesosExecutor implements Executor {
   public static final Log LOG = LogFactory.getLog(MesosExecutor.class);
-  private JobConf conf;
+  private SlaveInfo slaveInfo;
   private TaskTracker taskTracker;
 
   public static void main(String[] args) {
@@ -29,49 +25,26 @@ public class MesosExecutor implements Executor {
     System.exit(driver.run() == Status.DRIVER_STOPPED ? 0 : 1);
   }
 
-  @Override
-  public void registered(ExecutorDriver driver, ExecutorInfo executorInfo,
-                         FrameworkInfo frameworkInfo, SlaveInfo slaveInfo) {
-    LOG.info("Executor registered with the slave");
+  private JobConf configure(final TaskInfo task) {
+    JobConf conf = new JobConf(false);
+    try {
+      byte[] bytes = task.getData().toByteArray();
+      conf.readFields(new DataInputStream(new ByteArrayInputStream(bytes)));
+    } catch (IOException e) {
+      LOG.warn("Failed to deserialize configuraiton.", e);
+      System.exit(1);
+    }
 
-    Configuration c = new Configuration(false);
-    conf = new JobConf();
-    // Get TaskTracker's config options from environment variables set by the
-    // JobTracker.
-    if (executorInfo.getCommand().hasEnvironment()) {
-      for (Variable variable : executorInfo.getCommand().getEnvironment()
-          .getVariablesList()) {
-        if (variable.getName().equals(Constants.HADOOP_MESOS_CONF_STRING)) {
-          LOG.info("CONVERTED: " + variable.getValue());
-          try {
-            byte[] base64 = Base64.decodeBase64(variable.getValue());
-            c.readFields(new DataInputStream(new ByteArrayInputStream(base64)));
-          } catch (IOException e) {
-            e.printStackTrace();
-          }
-
-          for (Map.Entry<String, String> entry : c) {
-            LOG.info("Setting: " + entry.getKey() + " -> " + entry.getValue());
-            conf.set(entry.getKey(), entry.getValue());
-          }
-
-          try {
-            StringWriter sw = new StringWriter();
-            String xmlString = null;
-            conf.writeXml(sw);
-            sw.flush();
-            xmlString = sw.getBuffer().toString();
-            LOG.info("XML Configuration received:\n" +
-                org.apache.mesos.hadoop.Utils.formatXml(xmlString));
-          } catch (TransformerException e) {
-            LOG.fatal("Error, received invalid XML:\n"
-                + variable.getValue(), e);
-            System.exit(1);
-          } catch (IOException e) {
-            e.printStackTrace();
-          }
-        }
-      }
+    // Output the configuration as XML for easy debugging.
+    try {
+      StringWriter writer = new StringWriter();
+      conf.writeXml(writer);
+      writer.flush();
+      String xml = writer.getBuffer().toString();
+      LOG.info("XML Configuration received:\n" +
+               org.apache.mesos.hadoop.Utils.formatXml(xml));
+    } catch (Exception e) {
+      LOG.warn("Failed to output configuration as XML.", e);
     }
 
     // Get hostname from Mesos to make sure we match what it reports
@@ -81,11 +54,23 @@ public class MesosExecutor implements Executor {
     // Set the mapred.local directory inside the executor sandbox, so that
     // different TaskTrackers on the same host do not step on each other.
     conf.set("mapred.local.dir", System.getProperty("user.dir") + "/mapred");
+
+    return conf;
+  }
+
+  @Override
+  public void registered(ExecutorDriver driver, ExecutorInfo executorInfo,
+                         FrameworkInfo frameworkInfo, SlaveInfo slaveInfo) {
+    LOG.info("Executor registered with the slave");
+    this.slaveInfo = slaveInfo;
   }
 
   @Override
   public void launchTask(final ExecutorDriver driver, final TaskInfo task) {
     LOG.info("Launching task : " + task.getTaskId().getValue());
+
+    // Get configuration from task data (prepared by the JobTracker).
+    JobConf conf = configure(task);
 
     // NOTE: We need to manually set the context class loader here because,
     // the TaskTracker is unable to find LoginModule class otherwise.
@@ -93,9 +78,7 @@ public class MesosExecutor implements Executor {
         TaskTracker.class.getClassLoader());
 
     try {
-
       taskTracker = new TaskTracker(conf);
-
     } catch (IOException e) {
       LOG.fatal("Failed to start TaskTracker", e);
       System.exit(1);
