@@ -1,28 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
- 
+
     <groupId>org.apache.mesos</groupId>
     <artifactId>hadoop-mesos</artifactId>
     <version>0.0.1</version>
- 
+
     <properties>
         <encoding>UTF-8</encoding>
- 
+
         <!-- language versions -->
         <java.abi>1.6</java.abi>
- 
+
         <!-- runtime deps versions -->
         <commons-logging.version>1.1.1</commons-logging.version>
         <hadoop-core.version>1.2.0</hadoop-core.version>
         <mesos.version>0.14.0</mesos.version>
         <protobuf.version>2.4.1</protobuf.version>
- 
+
         <!-- test deps versions -->
         <junit.version>4.11</junit.version>
         <mockito.version>1.9.5</mockito.version>
     </properties>
- 
+
+    <!-- TODO(benh): Remove repository once we've published a JDK6 JAR. -->
     <repositories>
         <repository>
             <id>mesosphere-public-repo</id>
@@ -30,7 +31,7 @@
             <url>http://s3.amazonaws.com/mesosphere-maven-public/</url>
         </repository>
     </repositories>
- 
+
     <dependencies>
         <dependency>
             <groupId>commons-logging</groupId>
@@ -45,6 +46,7 @@
         </dependency>
         <dependency>
             <groupId>org.apache.mesos</groupId>
+            <!-- TODO(benh): Use 'mesos' after we've published a JDK6 JAR. -->
             <artifactId>mesos_jdk6</artifactId>
             <version>${mesos.version}</version>
         </dependency>
@@ -53,7 +55,7 @@
             <artifactId>protobuf-java</artifactId>
             <version>${protobuf.version}</version>
         </dependency>
- 
+
         <!-- Test scope -->
         <dependency>
             <groupId>junit</groupId>
@@ -75,7 +77,7 @@
                     <showWarnings>true</showWarnings>
                 </configuration>
             </plugin>
- 
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -104,5 +106,5 @@
  
         </plugins>
     </build>
- 
+
 </project>
