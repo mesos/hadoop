@@ -641,12 +641,16 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
             envBuilder.addVariables(Protos.Environment.Variable.newBuilder()
                 .setName("JAVA_HOME")
                 .setValue(env.get("JAVA_HOME")));
+            LOG.info("Setting JAVA_HOME to: "
+                + env.get("JAVA_HOME"));
           }
 
           if (env.containsKey("JAVA_LIBRARY_PATH")) {
             envBuilder.addVariables(Protos.Environment.Variable.newBuilder()
                 .setName("JAVA_LIBRARY_PATH")
                 .setValue(env.get("JAVA_LIBRARY_PATH")));
+            LOG.info("Setting JAVA_LIBRARY_PATH to: "
+                + env.get("JAVA_LIBRARY_PATH"));
           }
 
           // Command info differs when performing a local run.
