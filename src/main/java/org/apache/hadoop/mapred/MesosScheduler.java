@@ -78,6 +78,21 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
       synchronized (MesosScheduler.this) {
         JobInProgress job = event.getJobInProgress();
 
+        // If we have flaky tasktrackers, kill them.
+        final List<String> flakyTrackers = job.getBlackListedTrackers();
+        // Remove the task from the map.  This is O(n^2), but there's no better
+        // way to do it, AFAIK.  The flakyTrackers list should usually be
+        // small, so this is probably not bad.
+        for (String hostname : flakyTrackers) {
+          for (MesosTracker mesosTracker : mesosTrackers.values()) {
+            if (mesosTracker.host.getHostName().startsWith(hostname)) {
+              LOG.info("Killing Mesos task: " + mesosTracker.taskId + " on host "
+                  + mesosTracker.host + " because it has been marked as flaky");
+              killTracker(mesosTracker);
+            }
+          }
+        }
+
         // If the job is complete, kill all the corresponding idle TaskTrackers.
         if (!job.isComplete()) {
           return;
@@ -85,9 +100,8 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
 
         LOG.info("Completed job : " + job.getJobID());
 
-        Set<HttpHost> trackers = new HashSet<HttpHost>(mesosTrackers.keySet());
-
         // Remove the task from the map.
+        final Set<HttpHost> trackers = new HashSet<HttpHost>(mesosTrackers.keySet());
         for (HttpHost tracker : trackers) {
           MesosTracker mesosTracker = mesosTrackers.get(tracker);
           mesosTracker.jobs.remove(job.getJobID());
