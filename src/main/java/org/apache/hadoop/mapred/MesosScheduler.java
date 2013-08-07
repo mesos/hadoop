@@ -816,8 +816,8 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
                   .setName("mem")
                   .setType(Value.Type.SCALAR)
                   .setRole(memRole)
-                  .setScalar(Value.Scalar.newBuilder().setValue(containerMem))))
-            .setCommand(commandInfo)
+                  .setScalar(Value.Scalar.newBuilder().setValue(containerMem)))
+                .setCommand(commandInfo))
             .setData(ByteString.copyFrom(bytes))
             .build();
 
