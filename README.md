@@ -95,7 +95,7 @@ operation](http://hadoop.apache.org/docs/stable/single_node_setup.html#PseudoDis
   <value>localhost:5050</value>
 </property>
 <property>
-  <name>mapred.mesos.executor</name>
+  <name>mapred.mesos.executor.uri</name>
   <value>hdfs://localhost:9000/hadoop-2.0.0-mr1-cdh4.2.1.tar.gz</value>
 </property>
 ```
