@@ -37,21 +37,14 @@ default values.
       zk://zk.apache.org:2181/hadoop/mesos).
     </description>
   </property>
-  <!--
-       Make sure to uncomment the 'mapred.mesos.executor' property,
-       when running the Hadoop JobTracker on a real Mesos cluster.
-
-       NOTE: You need to MANUALLY upload the Mesos Hadoop distribution to the
-       location that is set as the value of this property. This distribution is
-       built for you, after you run 'make hadoop-*', at
-       'hadoop/build/hadoop.tar.gz'. This distribution contains all the
-       required Mesos patches.
-    <property>
-      <name>mapred.mesos.executor</name>
-      <value>hdfs://hdfs.name.node:port/hadoop.tar.gz</value>
-    </property>
-   -->
-
+  <property>
+    <name>mapred.mesos.executor.uri</name>
+    <value>hdfs://hdfs.name.node:port/hadoop.tar.gz</value>
+    <description>
+      This is the URI of the Hadoop on Mesos distribution.
+      NOTE: You need to MANUALLY upload this yourself!
+    </description>
+  </property>
   <!-- The properties below indicate the amount of resources that are allocated
     to a Hadoop slot (i.e., map/reduce task) by Mesos. -->
   <property>
