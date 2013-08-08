@@ -75,44 +75,42 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
 
     @Override
     public void jobUpdated(JobChangeEvent event) {
-      synchronized (MesosScheduler.this) {
-        JobInProgress job = event.getJobInProgress();
+      JobInProgress job = event.getJobInProgress();
 
-        // If we have flaky tasktrackers, kill them.
-        final List<String> flakyTrackers = job.getBlackListedTrackers();
-        // Remove the task from the map.  This is O(n^2), but there's no better
-        // way to do it, AFAIK.  The flakyTrackers list should usually be
-        // small, so this is probably not bad.
-        for (String hostname : flakyTrackers) {
-          for (MesosTracker mesosTracker : mesosTrackers.values()) {
-            if (mesosTracker.host.getHostName().startsWith(hostname)) {
-              LOG.info("Killing Mesos task: " + mesosTracker.taskId + " on host "
-                  + mesosTracker.host + " because it has been marked as flaky");
-              killTracker(mesosTracker);
-            }
-          }
-        }
-
-        // If the job is complete, kill all the corresponding idle TaskTrackers.
-        if (!job.isComplete()) {
-          return;
-        }
-
-        LOG.info("Completed job : " + job.getJobID());
-
-        // Remove the task from the map.
-        final Set<HttpHost> trackers = new HashSet<HttpHost>(mesosTrackers.keySet());
-        for (HttpHost tracker : trackers) {
-          MesosTracker mesosTracker = mesosTrackers.get(tracker);
-          mesosTracker.jobs.remove(job.getJobID());
-
-          // If the TaskTracker doesn't have any running tasks, kill it.
-          if (mesosTracker.jobs.isEmpty() && mesosTracker.active) {
+      // If we have flaky tasktrackers, kill them.
+      final List<String> flakyTrackers = job.getBlackListedTrackers();
+      // Remove the task from the map.  This is O(n^2), but there's no better
+      // way to do it, AFAIK.  The flakyTrackers list should usually be
+      // small, so this is probably not bad.
+      for (String hostname : flakyTrackers) {
+        for (MesosTracker mesosTracker : mesosTrackers.values()) {
+          if (mesosTracker.host.getHostName().startsWith(hostname)) {
             LOG.info("Killing Mesos task: " + mesosTracker.taskId + " on host "
-                + mesosTracker.host + " because it is no longer needed");
-
+                + mesosTracker.host + " because it has been marked as flaky");
             killTracker(mesosTracker);
           }
+        }
+      }
+
+      // If the job is complete, kill all the corresponding idle TaskTrackers.
+      if (!job.isComplete()) {
+        return;
+      }
+
+      LOG.info("Completed job : " + job.getJobID());
+
+      // Remove the task from the map.
+      final Set<HttpHost> trackers = new HashSet<HttpHost>(mesosTrackers.keySet());
+      for (HttpHost tracker : trackers) {
+        MesosTracker mesosTracker = mesosTrackers.get(tracker);
+        mesosTracker.jobs.remove(job.getJobID());
+
+        // If the TaskTracker doesn't have any running tasks, kill it.
+        if (mesosTracker.jobs.isEmpty() && mesosTracker.active) {
+          LOG.info("Killing Mesos task: " + mesosTracker.taskId + " on host "
+              + mesosTracker.host + " because it is no longer needed");
+
+          killTracker(mesosTracker);
         }
       }
     }
@@ -236,25 +234,21 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   }
 
   // Mesos Scheduler methods.
-  // These are synchronized, where possible. Some of these methods need to access the
+  // These are synchronized, where needed. Some of these methods need to access the
   // JobTracker, which can lead to a deadlock:
   // See: https://issues.apache.org/jira/browse/MESOS-429
-  // The workaround employed here is to unsynchronize those methods needing access to
-  // the JobTracker state and use explicit synchronization instead as appropriate.
-  // TODO(bmahler): Provide a cleaner solution to this issue. One solution is to
-  // split up the Scheduler and TaskScheduler implementations in order to break the
-  // locking cycle. This would require a synchronized class to store the shared
-  // state across our Scheduler and TaskScheduler implementations, and provide
-  // atomic operations as needed.
+  // We should prefer explicit synchronization when possible.  The main reason
+  // for this is that unnecessary locking causes contention with a
+  // heavily-loaded jobtracker.
   @Override
-  public synchronized void registered(SchedulerDriver schedulerDriver,
+  public void registered(SchedulerDriver schedulerDriver,
                                       FrameworkID frameworkID, MasterInfo masterInfo) {
     LOG.info("Registered as " + frameworkID.getValue()
         + " with master " + masterInfo);
   }
 
   @Override
-  public synchronized void reregistered(SchedulerDriver schedulerDriver,
+  public void reregistered(SchedulerDriver schedulerDriver,
                                         MasterInfo masterInfo) {
     LOG.info("Re-registered with master " + masterInfo);
   }
@@ -301,13 +295,13 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   }
 
   @Override
-  public synchronized void offerRescinded(SchedulerDriver schedulerDriver,
+  public void offerRescinded(SchedulerDriver schedulerDriver,
                                           OfferID offerID) {
     LOG.warn("Rescinded offer: " + offerID.getValue());
   }
 
   @Override
-  public synchronized void statusUpdate(SchedulerDriver schedulerDriver,
+  public void statusUpdate(SchedulerDriver schedulerDriver,
                                         Protos.TaskStatus taskStatus) {
     LOG.info("Status update of " + taskStatus.getTaskId().getValue()
         + " to " + taskStatus.getState().name()
@@ -326,9 +320,11 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
         // Remove the task from the map.
         for (HttpHost tracker : trackers) {
           if (mesosTrackers.get(tracker).taskId.equals(taskStatus.getTaskId())) {
-            LOG.info("Removing terminated TaskTracker: " + tracker);
-            mesosTrackers.get(tracker).timer.cancel();
-            mesosTrackers.remove(tracker);
+            synchronized (this) {
+              LOG.info("Removing terminated TaskTracker: " + tracker);
+              mesosTrackers.get(tracker).timer.cancel();
+              mesosTrackers.remove(tracker);
+            }
           }
         }
         break;
@@ -343,7 +339,7 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   }
 
   @Override
-  public synchronized void frameworkMessage(SchedulerDriver schedulerDriver,
+  public void frameworkMessage(SchedulerDriver schedulerDriver,
                                             ExecutorID executorID, SlaveID slaveID, byte[] bytes) {
     LOG.info("Framework Message of " + bytes.length + " bytes"
         + " from executor " + executorID.getValue()
@@ -351,25 +347,25 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   }
 
   @Override
-  public synchronized void disconnected(SchedulerDriver schedulerDriver) {
+  public void disconnected(SchedulerDriver schedulerDriver) {
     LOG.warn("Disconnected from Mesos master.");
   }
 
   @Override
-  public synchronized void slaveLost(SchedulerDriver schedulerDriver,
+  public void slaveLost(SchedulerDriver schedulerDriver,
                                      SlaveID slaveID) {
     LOG.warn("Slave lost: " + slaveID.getValue());
   }
 
   @Override
-  public synchronized void executorLost(SchedulerDriver schedulerDriver,
+  public void executorLost(SchedulerDriver schedulerDriver,
                                         ExecutorID executorID, SlaveID slaveID, int status) {
     LOG.warn("Executor " + executorID.getValue()
         + " lost with status " + status + " on slave " + slaveID);
   }
 
   @Override
-  public synchronized void error(SchedulerDriver schedulerDriver, String s) {
+  public void error(SchedulerDriver schedulerDriver, String s) {
     LOG.error("Error from scheduler driver: " + s);
   }
 
