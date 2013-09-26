@@ -369,11 +369,4 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   public synchronized void error(SchedulerDriver schedulerDriver, String s) {
     LOG.error("Error from scheduler driver: " + s);
   }
-
-
-
-
-
-
-
 }
