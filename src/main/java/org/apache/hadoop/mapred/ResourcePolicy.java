@@ -61,7 +61,9 @@ public class ResourcePolicy {
     tasktrackerJVMHeap = Math.round((double) tasktrackerMem /
         (MesosScheduler.JVM_MEM_OVERHEAD_PERCENT_DEFAULT + 1));
 
-    containerCpus = MesosScheduler.TASKTRACKER_CPUS;
+    containerCpus = scheduler.conf.getFloat("mapred.mesos.tasktracker.cpus",
+        (float) MesosScheduler.TASKTRACKER_CPUS);
+
     containerMem = tasktrackerMem;
     containerDisk = 0;
 
