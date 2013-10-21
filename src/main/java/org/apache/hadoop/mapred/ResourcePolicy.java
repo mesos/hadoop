@@ -361,8 +361,7 @@ public class ResourcePolicy {
 
         String command = scheduler.conf.get("mapred.mesos.executor.command");
         if (command == null || command.equals("")) {
-          command = "echo $(env) ; " +
-              " ./bin/hadoop  org.apache.hadoop.mapred.MesosExecutor";
+          command = "env ; ./bin/hadoop org.apache.hadoop.mapred.MesosExecutor";
         }
 
         commandInfo = CommandInfo.newBuilder()
