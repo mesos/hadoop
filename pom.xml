@@ -14,7 +14,7 @@
 
         <!-- runtime deps versions -->
         <commons-logging.version>1.1.1</commons-logging.version>
-        <hadoop-core.version>1.2.0</hadoop-core.version>
+        <hadoop-core.version>1.2.1</hadoop-core.version>
         <mesos.version>0.14.0-20130806</mesos.version>
         <protobuf.version>2.4.1</protobuf.version>
 
