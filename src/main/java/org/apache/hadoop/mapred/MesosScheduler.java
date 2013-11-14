@@ -324,7 +324,7 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
         for (HttpHost tracker : trackers) {
           if (mesosTrackers.get(tracker).taskId.equals(taskStatus.getTaskId())) {
             LOG.info("Removing terminated TaskTracker: " + tracker);
-            mesosTrackers.get(tracker).timer.cancel();
+            mesosTrackers.get(tracker).active = true;
             mesosTrackers.remove(tracker);
           }
         }
