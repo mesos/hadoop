@@ -17,7 +17,7 @@ import org.apache.mesos.SchedulerDriver;
 
 import java.io.*;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
 
 import static org.apache.hadoop.util.StringUtils.join;
 
@@ -61,6 +61,9 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   // Mesos TaskID.
   protected Map<HttpHost, MesosTracker> mesosTrackers =
     new ConcurrentHashMap<HttpHost, MesosTracker>();
+
+  protected final ScheduledExecutorService timerScheduler =
+       Executors.newScheduledThreadPool(1);
 
   protected JobInProgressListener jobListener = new JobInProgressListener() {
     @Override
@@ -256,9 +259,17 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     LOG.info("Re-registered with master " + masterInfo);
   }
 
-  public synchronized void killTracker(MesosTracker tracker) {
-    driver.killTask(tracker.taskId);
+  public void killTracker(MesosTracker tracker) {
+    synchronized (this) {
+      driver.killTask(tracker.taskId);
+    }
     mesosTrackers.remove(tracker.host);
+  }
+
+  public synchronized void scheduleTimer(Runnable command,
+                                         long delay,
+                                         TimeUnit unit) {
+    timerScheduler.schedule(command, delay, unit);
   }
 
   // For some reason, pendingMaps() and pendingReduces() doesn't return the

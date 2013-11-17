@@ -100,7 +100,6 @@ public class ResourcePolicy {
       HttpHost host = new HttpHost(status.getHost(), status.getHttpPort());
       if (scheduler.mesosTrackers.containsKey(host)) {
         scheduler.mesosTrackers.get(host).active = true;
-        scheduler.mesosTrackers.get(host).timer.cancel();
         idleMapSlots += status.getAvailableMapSlots();
         idleReduceSlots += status.getAvailableReduceSlots();
       }
@@ -193,7 +192,6 @@ public class ResourcePolicy {
 
   public void resourceOffers(SchedulerDriver schedulerDriver,
                              List<Offer> offers) {
-    // Before synchronizing, we pull all needed information from the JobTracker.
     final HttpHost jobTrackerAddress =
         new HttpHost(scheduler.jobTracker.getHostname(), scheduler.jobTracker.getTrackerPort());
 
@@ -204,9 +202,9 @@ public class ResourcePolicy {
       jobsInProgress.add(scheduler.jobTracker.getJob(status.getJobID()));
     }
 
-    computeNeededSlots(jobsInProgress, taskTrackers);
+    synchronized (this) {
+      computeNeededSlots(jobsInProgress, taskTrackers);
 
-    synchronized (scheduler) {
       // Launch TaskTrackers to satisfy the slot requirements.
       for (Offer offer : offers) {
         if (neededMapSlots <= 0 && neededReduceSlots <= 0) {
