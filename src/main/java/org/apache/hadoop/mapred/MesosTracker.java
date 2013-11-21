@@ -6,7 +6,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.mesos.Protos.TaskID;
 
 import java.util.*;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 /**
  * Used to track the our launched TaskTrackers.
@@ -21,7 +21,7 @@ public class MesosTracker {
   public volatile boolean active = false; // Set once tracked by the JobTracker.
   public volatile MesosScheduler scheduler;
   // Tracks Hadoop jobs running on the tracker.
-  public Set<JobID> jobs = new HashSet<JobID>();
+  public Set<JobID> jobs = Collections.newSetFromMap(new ConcurrentHashMap<JobID, Boolean>());
 
   public MesosTracker(HttpHost host, TaskID taskId, long mapSlots,
                       long reduceSlots, MesosScheduler scheduler) {
@@ -34,9 +34,13 @@ public class MesosTracker {
     scheduler.scheduleTimer(new Runnable() {
       @Override
       public void run() {
-        // If the tracker activated while we were awaiting to acquire the
-        // lock, return.
-        if (MesosTracker.this.active) return;
+        if (MesosTracker.this.active) {
+          // If the tracker activated while we were awaiting to acquire the
+          // lock, start the periodic cleanup timer and return.
+          schedulePeriodic();
+
+          return;
+        }
 
         // When the scheduler is busy or doesn't receive offers, it may
         // fail to mark some TaskTrackers as active even though they are.
@@ -57,5 +61,29 @@ public class MesosTracker {
         MesosTracker.this.scheduler.killTracker(MesosTracker.this);
       }
     }, MesosScheduler.LAUNCH_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+  }
+
+  protected void schedulePeriodic() {
+    scheduler.scheduleTimer(new Runnable() {
+      @Override
+      public void run() {
+        if (MesosTracker.this.scheduler.mesosTrackers.containsKey(host)) {
+          // Periodically check if the jobs assigned to this TaskTracker are
+          // still running (lazy GC).
+          final Set<JobID> jobsCopy = new HashSet<JobID>(MesosTracker.this.jobs);
+          for (JobID id : jobsCopy) {
+            try {
+              JobStatus jobStatus = MesosTracker.this.scheduler.jobTracker.getJobStatus(id);
+              if (jobStatus == null || jobStatus.isJobComplete()) {
+                MesosTracker.this.jobs.remove(id);
+              }
+            } catch (java.io.IOException e) {
+              LOG.warn("Unable to get job status", e);
+            }
+          }
+          schedulePeriodic();
+        }
+      }
+    }, MesosScheduler.PERIODIC_MS, TimeUnit.MILLISECONDS);
   }
 }

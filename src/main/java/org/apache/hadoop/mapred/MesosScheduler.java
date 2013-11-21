@@ -44,6 +44,7 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   // The amount of time to wait for task trackers to launch before
   // giving up.
   public static final long LAUNCH_TIMEOUT_MS = 300000; // 5 minutes
+  public static final long PERIODIC_MS = 300000; // 5 minutes
   private SchedulerDriver driver;
 
   protected TaskScheduler taskScheduler;
@@ -109,7 +110,8 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
           MesosTracker mesosTracker = mesosTrackers.get(tracker);
           mesosTracker.jobs.remove(job.getJobID());
 
-          // If the TaskTracker doesn't have any running tasks, kill it.
+          // If the TaskTracker doesn't have any running job tasks assigned,
+          // kill it.
           if (mesosTracker.jobs.isEmpty() && mesosTracker.active) {
             LOG.info("Killing Mesos task: " + mesosTracker.taskId + " on host "
                 + mesosTracker.host + " because it is no longer needed");
