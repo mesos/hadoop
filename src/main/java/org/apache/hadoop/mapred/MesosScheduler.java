@@ -6,7 +6,6 @@ import org.apache.commons.httpclient.HttpHost;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.mapreduce.TaskType;
 import org.apache.hadoop.mapreduce.server.jobtracker.TaskTracker;
 import org.apache.mesos.MesosSchedulerDriver;
 import org.apache.mesos.Protos;
@@ -14,10 +13,14 @@ import org.apache.mesos.Protos.*;
 import org.apache.mesos.Protos.TaskID;
 import org.apache.mesos.Scheduler;
 import org.apache.mesos.SchedulerDriver;
+import org.apache.mesos.hadoop.Metrics;
 
 import java.io.*;
 import java.util.*;
 import java.util.concurrent.*;
+import java.net.InetSocketAddress;
+
+import com.codahale.metrics.Meter;
 
 import static org.apache.hadoop.util.StringUtils.join;
 
@@ -57,6 +60,9 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   protected boolean policyIsFixed = false;
   protected ResourcePolicy policy;
 
+  protected boolean enableMetrics = false;
+  public Metrics metrics;
+
   // Maintains a mapping from {tracker host:port -> MesosTracker}.
   // Used for tracking the slots of each TaskTracker and the corresponding
   // Mesos TaskID.
@@ -70,6 +76,9 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     @Override
     public void jobAdded(JobInProgress job) throws IOException {
       LOG.info("Added job " + job.getJobID());
+      if (metrics != null) {
+        metrics.jobTimerContexts.put(job.getJobID(), metrics.jobTimer.time());
+      }
     }
 
     @Override
@@ -81,6 +90,13 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     public void jobUpdated(JobChangeEvent event) {
       synchronized (MesosScheduler.this) {
         JobInProgress job = event.getJobInProgress();
+
+        if (metrics != null) {
+          Meter meter = metrics.jobStateMeter.get(job.getStatus().getRunState());
+          if (meter != null) {
+            meter.mark();
+          }
+        }
 
         // If we have flaky tasktrackers, kill them.
         final List<String> flakyTrackers = job.getBlackListedTrackers();
@@ -100,6 +116,12 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
         // If the job is complete, kill all the corresponding idle TaskTrackers.
         if (!job.isComplete()) {
           return;
+        }
+
+        if (metrics != null) {
+          com.codahale.metrics.Timer.Context context = metrics.jobTimerContexts.get(job.getJobID());
+          context.stop();
+          metrics.jobTimerContexts.remove(job.getJobID());
         }
 
         LOG.info("Completed job : " + job.getJobID());
@@ -186,6 +208,13 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
       policy = new ResourcePolicyVariable(this);
     }
 
+    enableMetrics = conf.getBoolean("mapred.mesos.metrics.enabled",
+        enableMetrics);
+
+    if (enableMetrics) {
+      metrics = new Metrics(conf);
+    }
+
     taskScheduler.start();
   }
 
@@ -262,9 +291,13 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   }
 
   public void killTracker(MesosTracker tracker) {
+    if (metrics != null) {
+      metrics.killMeter.mark();
+    }
     synchronized (this) {
       driver.killTask(tracker.taskId);
     }
+    tracker.stop();
     mesosTrackers.remove(tracker.host);
   }
 
@@ -337,7 +370,7 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
         for (HttpHost tracker : trackers) {
           if (mesosTrackers.get(tracker).taskId.equals(taskStatus.getTaskId())) {
             LOG.info("Removing terminated TaskTracker: " + tracker);
-            mesosTrackers.get(tracker).active = true;
+            mesosTrackers.get(tracker).stop();
             mesosTrackers.remove(tracker);
           }
         }
@@ -349,6 +382,13 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
       default:
         LOG.error("Unexpected TaskStatus: " + taskStatus.getState().name());
         break;
+    }
+
+    if (metrics != null) {
+      Meter meter = metrics.taskStateMeter.get(taskStatus.getState());
+      if (meter != null) {
+        meter.mark();
+      }
     }
   }
 

@@ -22,6 +22,7 @@ public class MesosTracker {
   public volatile MesosScheduler scheduler;
   // Tracks Hadoop jobs running on the tracker.
   public Set<JobID> jobs = Collections.newSetFromMap(new ConcurrentHashMap<JobID, Boolean>());
+  public com.codahale.metrics.Timer.Context context;
 
   public MesosTracker(HttpHost host, TaskID taskId, long mapSlots,
                       long reduceSlots, MesosScheduler scheduler) {
@@ -30,6 +31,9 @@ public class MesosTracker {
     this.mapSlots = mapSlots;
     this.reduceSlots = reduceSlots;
     this.scheduler = scheduler;
+    if (scheduler.metrics != null) {
+      this.context = scheduler.metrics.trackerTimer.time();
+    }
 
     scheduler.scheduleTimer(new Runnable() {
       @Override
@@ -56,6 +60,9 @@ public class MesosTracker {
           }
         }
 
+        if (MesosTracker.this.scheduler.metrics != null) {
+          MesosTracker.this.scheduler.metrics.launchTimeout.mark();
+        }
         LOG.warn("Tracker " + MesosTracker.this.host + " failed to launch within " +
             MesosScheduler.LAUNCH_TIMEOUT_MS / 1000 + " seconds, killing it");
         MesosTracker.this.scheduler.killTracker(MesosTracker.this);
@@ -75,6 +82,9 @@ public class MesosTracker {
             try {
               JobStatus jobStatus = MesosTracker.this.scheduler.jobTracker.getJobStatus(id);
               if (jobStatus == null || jobStatus.isJobComplete()) {
+                if (MesosTracker.this.scheduler.metrics != null) {
+                  MesosTracker.this.scheduler.metrics.periodicGC.mark();
+                }
                 MesosTracker.this.jobs.remove(id);
               }
             } catch (java.io.IOException e) {
@@ -85,5 +95,12 @@ public class MesosTracker {
         }
       }
     }, MesosScheduler.PERIODIC_MS, TimeUnit.MILLISECONDS);
+  }
+
+  public void stop() {
+    active = true;
+    if (context != null) {
+      context.stop();
+    }
   }
 }

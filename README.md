@@ -3,20 +3,20 @@ Hadoop on Mesos
 
 #### Overview ####
 
-To run _Hadoop on Mesos_ you need to add the `hadoop-mesos-0.0.4.jar`
+To run _Hadoop on Mesos_ you need to add the `hadoop-mesos-0.0.5.jar`
 library to your Hadoop distribution (any distribution that supports
-`hadoop-core-1.2.0` should work) and set some new configuration
+`hadoop-core-1.2.1` should work) and set some new configuration
 properties. Read on for details.
 
 #### Build ####
 
-You can build `hadoop-mesos-0.0.4.jar` using Maven:
+You can build `hadoop-mesos-0.0.5.jar` using Maven:
 
 ```
 $ mvn package
 ```
 
-If successful, the JAR will be at `target/hadoop-mesos-0.0.4.jar`.
+If successful, the JAR will be at `target/hadoop-mesos-0.0.5.jar`.
 
 > NOTE: If you want to build against a different version of Mesos than
 > the default you'll need to update `mesos-version` in `pom.xml`.
@@ -38,10 +38,10 @@ $ tar zxf mr1-2.0.0-mr1-cdh4.2.2.tar.gz
 
 > **Take note**, the extracted directory is `hadoop-2.0.0-mr1-cdh4.2.2`.
 
-Now copy `hadoop-mesos-0.0.4.jar` into the `lib` folder.
+Now copy `hadoop-mesos-0.0.5.jar` into the `lib` folder.
 
 ```
-$ cp /path/to/hadoop-mesos-0.0.4.jar hadoop-2.0.0-mr1-cdh4.2.2/lib/
+$ cp /path/to/hadoop-mesos-0.0.5.jar hadoop-2.0.0-mr1-cdh4.2.2/lib/
 ```
 
 _That's it!_ You now have a _Hadoop on Mesos_ distribution!
@@ -99,6 +99,8 @@ operation](http://hadoop.apache.org/docs/stable/single_node_setup.html#PseudoDis
   <value>hdfs://localhost:9000/hadoop-2.0.0-mr1-cdh4.2.2.tar.gz</value>
 </property>
 ```
+
+[More details on configuration propertios can be found here.](configuration.md)
 
 #### Start ####
 
