@@ -12,6 +12,7 @@ default values.
 <!-- Put site-specific property overrides in this file. -->
 
 <configuration>
+  <!-- Basic properties -->
   <property>
     <name>mapred.job.tracker</name>
     <value>localhost:54311</value>
@@ -45,6 +46,7 @@ default values.
       NOTE: You need to MANUALLY upload this yourself!
     </description>
   </property>
+
   <!-- The properties below indicate the amount of resources that are allocated
     to a Hadoop slot (i.e., map/reduce task) by Mesos. -->
   <property>
@@ -66,6 +68,8 @@ default values.
       and the heap (-Xmx) of the task. The value is in MiB.
     </description>
   </property>
+
+  <!-- Resource policies -->
   <property>
     <name>mapred.mesos.total.map.slots.minimum</name>
     <value>0</value>
@@ -112,6 +116,8 @@ default values.
       slots specified, that resource offer will be declined.
     </description>
   </property>
+
+  <!-- Additional Mesos parameters -->
   <property>
     <name>mapred.mesos.checkpoint</name>
     <value>false</value>
@@ -126,6 +132,103 @@ default values.
       This is the Mesos framework role.  This can be used in conjunction with
       Mesos reservations.  Consult the Mesos documentation for details.
     </description>
+  </property>
+
+
+  <!-- Metrics -->
+  <property>
+    <name>mapred.mesos.metrics.enabled</name>
+    <value>false</value>
+    <description>
+      Set this to `true` to enable metric reporting with the Coda Hale Metrics
+      library.
+    </description>
+  </property>
+
+  <!-- Metrics - CSV reporting -->
+  <property>
+    <name>mapred.mesos.metrics.csv.enabled</name>
+    <value>false</value>
+    <description>
+      Set this to `true` to enable CSV reporting with the Coda Hale Metrics
+      library.
+    </description>
+  </property>
+  <property>
+    <name>mapred.mesos.metrics.csv.path</name>
+    <value>/path/to/metrics/csv/</value>
+    <description>
+      Set this to `true` to enable CSV reporting with the Coda Hale Metrics
+      library.
+    </description>
+    <property>
+      <name>mapred.mesos.metrics.csv.interval</name>
+      <value>60</value>
+    </property>
+  </property>
+
+  <!-- Metrics - Graphite reporting -->
+  <property>
+    <name>mapred.mesos.metrics.graphite.enabled</name>
+    <value>false</value>
+    <description>
+      Set this to `true` to enable Graphite reporting with the Coda Hale Metrics
+      library.
+    </description>
+  </property>
+  <property>
+    <name>mapred.mesos.metrics.graphite.host</name>
+    <value>graphite.host.name</value>
+  </property>
+  <property>
+    <name>mapred.mesos.metrics.graphite.prefix</name>
+    <value>prefix</value>
+  </property>
+  <property>
+    <name>mapred.mesos.metrics.graphite.interval</name>
+    <value>60</value>
+  </property>
+
+  <!-- Metrics - Cassandra reporting -->
+  <property>
+    <name>mapred.mesos.metrics.cassandra.enabled</name>
+    <value>false</value>
+    <description>
+      Set this to `true` to enable Cassandra reporting with the Coda Hale
+      Metrics library.
+    </description>
+  </property>
+  <property>
+    <name>mapred.mesos.metrics.cassandra.hosts</name>
+    <value>localhost</value>
+  </property>
+  <property>
+    <name>mapred.mesos.metrics.cassandra.port</name>
+    <value>9042</value>
+  </property>
+  <property>
+    <name>mapred.mesos.metrics.cassandra.interval</name>
+    <value>60</value>
+  </property>
+  <property>
+    <name>mapred.mesos.metrics.cassandra.prefix</name>
+    <value>prefix</value>
+  </property>
+  <property>
+    <name>mapred.mesos.metrics.cassandra.ttl</name>
+    <value>864000</value>
+  </property>
+  <property>
+    <name>mapred.mesos.metrics.cassandra.keyspace</name>
+    <value>metrics</value>
+  </property>
+  <property>
+    <name>mapred.mesos.metrics.cassandra.table</name>
+    <value>metrics</value>
+  </property>
+  <property>
+    <name>mapred.mesos.metrics.cassandra.consistency</name>
+    <value>QUORUM</value>
   </property>
 </configuration>
 ```

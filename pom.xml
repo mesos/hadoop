@@ -4,7 +4,7 @@
 
     <groupId>org.apache.mesos</groupId>
     <artifactId>hadoop-mesos</artifactId>
-    <version>0.0.4</version>
+    <version>0.0.5</version>
 
     <properties>
         <encoding>UTF-8</encoding>
@@ -17,6 +17,9 @@
         <hadoop-core.version>1.2.1</hadoop-core.version>
         <mesos.version>0.14.0-20130806</mesos.version>
         <protobuf.version>2.4.1</protobuf.version>
+        <metrics-graphite.version>3.0.1</metrics-graphite.version>
+        <metrics-jvm.version>3.0.1</metrics-jvm.version>
+        <metrics-cassandra.version>3.0.1</metrics-cassandra.version>
 
         <!-- test deps versions -->
         <junit.version>4.11</junit.version>
@@ -33,6 +36,10 @@
         <repository>
             <id>libs-folder</id>
             <url>file://${basedir}/lib</url>
+        </repository>
+        <repository>
+            <id>clojars.org</id>
+            <url>http://clojars.org/repo</url>
         </repository>
     </repositories>
 
@@ -58,6 +65,47 @@
             <groupId>com.google.protobuf</groupId>
             <artifactId>protobuf-java</artifactId>
             <version>${protobuf.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.codahale.metrics</groupId>
+            <artifactId>metrics-graphite</artifactId>
+            <version>${metrics-graphite.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.codahale.metrics</groupId>
+            <artifactId>metrics-jvm</artifactId>
+            <version>${metrics-jvm.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.clojars.brenden</groupId>
+            <artifactId>metrics-cassandra</artifactId>
+            <version>${metrics-cassandra.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.codehaus.jackson</groupId>
+                    <artifactId>jackson-core-asl</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.codehaus.jackson</groupId>
+                    <artifactId>jackson-mapper-asl</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- Test scope -->
