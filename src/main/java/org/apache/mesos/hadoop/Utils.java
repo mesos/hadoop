@@ -1,8 +1,11 @@
 package org.apache.mesos.hadoop;
 
+import org.apache.mesos.Protos;
+
 import javax.xml.transform.*;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
+import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
 
