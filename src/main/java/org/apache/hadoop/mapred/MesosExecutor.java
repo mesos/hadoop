@@ -91,25 +91,31 @@ public class MesosExecutor implements Executor {
     new Thread("TaskTracker Run Thread") {
       @Override
       public void run() {
-        taskTracker.run();
-
-        // Send a TASK_FINISHED status update.
-        // We do this here because we want to send it in a separate thread
-        // than was used to call killTask().
-        driver.sendStatusUpdate(TaskStatus.newBuilder()
-            .setTaskId(task.getTaskId())
-            .setState(TaskState.TASK_FINISHED)
-            .build());
-
-        // Give some time for the update to reach the slave.
         try {
-          Thread.sleep(1000);
-        } catch (InterruptedException e) {
-          LOG.error("Failed to sleep TaskTracker thread", e);
-        }
+          taskTracker.run();
 
-        // Stop the executor.
-        driver.stop();
+          // Send a TASK_FINISHED status update.
+          // We do this here because we want to send it in a separate thread
+          // than was used to call killTask().
+          driver.sendStatusUpdate(TaskStatus.newBuilder()
+              .setTaskId(task.getTaskId())
+              .setState(TaskState.TASK_FINISHED)
+              .build());
+
+          // Give some time for the update to reach the slave.
+          try {
+            Thread.sleep(2000);
+          } catch (InterruptedException e) {
+            LOG.error("Failed to sleep TaskTracker thread", e);
+          }
+
+          // Stop the executor.
+          driver.stop();
+        } catch (Throwable t) {
+          LOG.error("Caught exception, committing suicide.", t);
+          driver.stop();
+          System.exit(1);
+        }
       }
     }.start();
 
