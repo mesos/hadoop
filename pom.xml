@@ -20,6 +20,7 @@
         <metrics-graphite.version>3.0.1</metrics-graphite.version>
         <metrics-jvm.version>3.0.1</metrics-jvm.version>
         <metrics-cassandra.version>3.0.1</metrics-cassandra.version>
+        <snappy-java.version>1.0.4.1</snappy-java.version>
 
         <!-- test deps versions -->
         <junit.version>4.11</junit.version>
@@ -107,10 +108,15 @@
                 </exclusion>
             </exclusions>
         </dependency>
+        <dependency>
+          <groupId>org.xerial.snappy</groupId>
+          <artifactId>snappy-java</artifactId>
+          <version>${snappy-java.version}</version>
+        </dependency>
 
         <!-- Test scope -->
         <dependency>
-            <groupId>junit</groupId>
+          <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>${junit.version}</version>
             <scope>test</scope>
