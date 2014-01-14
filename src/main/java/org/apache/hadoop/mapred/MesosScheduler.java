@@ -29,7 +29,7 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
 
   // This is the memory overhead for a jvm process. This needs to be added
   // to a jvm process's resource requirement, in addition to its heap size.
-  public static final double JVM_MEM_OVERHEAD_PERCENT_DEFAULT = 0.1; // 10%.
+  public static final double JVM_MEM_OVERHEAD_PERCENT_DEFAULT = 0.125; // 12.5%.
 
   // NOTE: It appears that there's no real resource requirements for a
   // map / reduce slot. We therefore define a default slot as:
