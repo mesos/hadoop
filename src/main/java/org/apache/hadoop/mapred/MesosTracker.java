@@ -74,7 +74,8 @@ public class MesosTracker {
     scheduler.scheduleTimer(new Runnable() {
       @Override
       public void run() {
-        if (MesosTracker.this.scheduler.mesosTrackers.containsKey(host)) {
+        if (MesosTracker.this.scheduler.mesosTrackers.containsKey(host) &&
+          MesosTracker.this == MesosTracker.this.scheduler.mesosTrackers.get(host)) {
           // Periodically check if the jobs assigned to this TaskTracker are
           // still running (lazy GC).
           final Set<JobID> jobsCopy = new HashSet<JobID>(MesosTracker.this.jobs);
