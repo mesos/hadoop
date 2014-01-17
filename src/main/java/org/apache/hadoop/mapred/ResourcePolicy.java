@@ -13,6 +13,7 @@ import org.apache.mesos.SchedulerDriver;
 
 import java.io.*;
 import java.util.*;
+import java.lang.Math;
 import static org.apache.hadoop.util.StringUtils.join;
 
 public class ResourcePolicy {
@@ -250,7 +251,8 @@ public class ResourcePolicy {
                 continue;
               }
               while (begin <= end && ports.size() < 2) {
-                ports.add(begin);
+                int port = begin + (int)(Math.random() * ((end - begin) + 1));
+                ports.add(port);
                 begin += 1;
               }
             }
