@@ -4,7 +4,7 @@
 
     <groupId>org.apache.mesos</groupId>
     <artifactId>hadoop-mesos</artifactId>
-    <version>0.0.5</version>
+    <version>0.0.6</version>
 
     <properties>
         <encoding>UTF-8</encoding>
@@ -15,7 +15,7 @@
         <!-- runtime deps versions -->
         <commons-logging.version>1.1.1</commons-logging.version>
         <hadoop-core.version>1.2.1</hadoop-core.version>
-        <mesos.version>0.14.0-20130806</mesos.version>
+        <mesos.version>0.15.0</mesos.version>
         <protobuf.version>2.4.1</protobuf.version>
         <metrics-graphite.version>3.0.1</metrics-graphite.version>
         <metrics-jvm.version>3.0.1</metrics-jvm.version>
@@ -32,11 +32,7 @@
         <repository>
             <id>mesosphere-public-repo</id>
             <name>Mesosphere Public Repo</name>
-            <url>http://s3.amazonaws.com/mesosphere-maven-public/</url>
-        </repository>
-        <repository>
-            <id>libs-folder</id>
-            <url>file://${basedir}/lib</url>
+            <url>http://downloads.mesosphere.io/maven</url>
         </repository>
         <repository>
             <id>clojars.org</id>
