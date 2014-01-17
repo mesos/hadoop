@@ -35,6 +35,10 @@ public class MesosTracker {
       this.context = scheduler.metrics.trackerTimer.time();
     }
 
+    scheduleStartupTimer();
+  }
+
+  protected void scheduleStartupTimer() {
     scheduler.scheduleTimer(new Runnable() {
       @Override
       public void run() {
@@ -55,7 +59,8 @@ public class MesosTracker {
 
         for (TaskTrackerStatus status : taskTrackers) {
           HttpHost host = new HttpHost(status.getHost(), status.getHttpPort());
-          if (MesosTracker.this.host.equals(host)) {
+          if (status.getHealthStatus().isNodeHealthy() && MesosTracker.this.host.equals(host)) {
+            schedulePeriodic();
             return;
           }
         }
