@@ -100,9 +100,10 @@ public class ResourcePolicy {
 
       HttpHost host = new HttpHost(status.getHost(), status.getHttpPort());
       if (scheduler.mesosTrackers.containsKey(host)) {
-        scheduler.mesosTrackers.get(host).active = true;
-        idleMapSlots += status.getAvailableMapSlots();
-        idleReduceSlots += status.getAvailableReduceSlots();
+        if (scheduler.mesosTrackers.get(host).active) {
+          idleMapSlots += status.getAvailableMapSlots();
+          idleReduceSlots += status.getAvailableReduceSlots();
+        }
       }
     }
 
