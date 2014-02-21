@@ -1,7 +1,6 @@
 package org.apache.hadoop.mapred;
 
-import com.google.protobuf.ByteString;
-
+import com.codahale.metrics.Meter;
 import org.apache.commons.httpclient.HttpHost;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -10,19 +9,17 @@ import org.apache.hadoop.mapreduce.server.jobtracker.TaskTracker;
 import org.apache.mesos.MesosSchedulerDriver;
 import org.apache.mesos.Protos;
 import org.apache.mesos.Protos.*;
-import org.apache.mesos.Protos.TaskID;
 import org.apache.mesos.Scheduler;
 import org.apache.mesos.SchedulerDriver;
 import org.apache.mesos.hadoop.Metrics;
 
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.*;
-import java.net.InetSocketAddress;
-
-import com.codahale.metrics.Meter;
-
-import static org.apache.hadoop.util.StringUtils.join;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class MesosScheduler extends TaskScheduler implements Scheduler {
   public static final Log LOG = LogFactory.getLog(MesosScheduler.class);

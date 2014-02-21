@@ -13,7 +13,7 @@ import org.apache.mesos.SchedulerDriver;
 
 import java.io.*;
 import java.util.*;
-import java.lang.Math;
+
 import static org.apache.hadoop.util.StringUtils.join;
 
 public class ResourcePolicy {

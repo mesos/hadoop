@@ -5,8 +5,12 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.mesos.Protos.TaskID;
 
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Used to track the our launched TaskTrackers.

@@ -2,18 +2,17 @@ package org.apache.hadoop.mapred;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.mesos.Executor;
 import org.apache.mesos.ExecutorDriver;
 import org.apache.mesos.MesosExecutorDriver;
-import org.apache.mesos.Protos.Environment.Variable;
 import org.apache.mesos.Protos.*;
 import org.apache.mesos.Protos.TaskID;
 import org.apache.mesos.Protos.TaskStatus;
 
-import javax.xml.transform.TransformerException;
-import java.io.*;
-import java.util.Map;
+import java.io.ByteArrayInputStream;
+import java.io.DataInputStream;
+import java.io.IOException;
+import java.io.StringWriter;
 
 public class MesosExecutor implements Executor {
   public static final Log LOG = LogFactory.getLog(MesosExecutor.class);

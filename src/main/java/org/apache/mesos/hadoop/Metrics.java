@@ -1,19 +1,27 @@
 package org.apache.mesos.hadoop;
 
+import com.codahale.metrics.CsvReporter;
+import com.codahale.metrics.Meter;
+import com.codahale.metrics.MetricFilter;
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.cassandra.Cassandra;
+import com.codahale.metrics.cassandra.CassandraReporter;
+import com.codahale.metrics.graphite.Graphite;
+import com.codahale.metrics.graphite.GraphiteReporter;
+import com.codahale.metrics.jvm.GarbageCollectorMetricSet;
+import com.codahale.metrics.jvm.MemoryUsageGaugeSet;
+import com.codahale.metrics.jvm.ThreadStatesGaugeSet;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.mesos.Protos;
-import org.apache.mesos.Protos.*;
-import org.apache.hadoop.mapred.*;
+import org.apache.hadoop.mapred.JobID;
+import org.apache.hadoop.mapred.JobStatus;
+import org.apache.mesos.Protos.TaskState;
 
 import java.io.File;
-import java.util.*;
-import java.util.concurrent.*;
 import java.net.InetSocketAddress;
-
-import com.codahale.metrics.graphite.*;
-import com.codahale.metrics.cassandra.*;
-import com.codahale.metrics.jvm.*;
-import com.codahale.metrics.*;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 public class Metrics {
   public MetricRegistry registry;
