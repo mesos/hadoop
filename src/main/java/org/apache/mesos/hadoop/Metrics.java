@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 
 public class Metrics {
   public MetricRegistry registry;
-  public Meter killMeter, launchTimeout, periodicGC;
+  public Meter killMeter, flakyTrackerKilledMeter, launchTimeout, periodicGC;
   public Map<Integer, Meter> jobStateMeter =
     new ConcurrentHashMap<Integer, Meter>();
   public Map<TaskState, Meter> taskStateMeter =
@@ -38,6 +38,7 @@ public class Metrics {
     registry = new MetricRegistry();
 
     killMeter = registry.meter(MetricRegistry.name(Metrics.class, "killMeter"));
+    flakyTrackerKilledMeter = registry.meter(MetricRegistry.name(Metrics.class, "flakyTrackerKilledMeter"));
     launchTimeout = registry.meter(MetricRegistry.name(Metrics.class, "launchTimeout"));
     periodicGC = registry.meter(MetricRegistry.name(Metrics.class, "periodicGC"));
     jobTimer = registry.timer(MetricRegistry.name(Metrics.class, "jobTimes"));

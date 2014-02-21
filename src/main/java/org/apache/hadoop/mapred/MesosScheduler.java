@@ -105,6 +105,9 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
             if (mesosTracker.host.getHostName().startsWith(hostname)) {
               LOG.info("Killing Mesos task: " + mesosTracker.taskId + " on host "
                   + mesosTracker.host + " because it has been marked as flaky");
+              if (metrics != null) {
+                metrics.flakyTrackerKilledMeter.mark();
+              }
               killTracker(mesosTracker);
             }
           }
