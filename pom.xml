@@ -17,9 +17,7 @@
         <hadoop-core.version>1.2.1</hadoop-core.version>
         <mesos.version>0.15.0</mesos.version>
         <protobuf.version>2.4.1</protobuf.version>
-        <metrics-graphite.version>3.0.1</metrics-graphite.version>
-        <metrics-jvm.version>3.0.1</metrics-jvm.version>
-        <metrics-cassandra.version>3.0.1</metrics-cassandra.version>
+        <metrics.version>3.0.2</metrics.version>
         <snappy-java.version>1.0.4.1</snappy-java.version>
 
         <!-- test deps versions -->
@@ -66,7 +64,7 @@
         <dependency>
             <groupId>com.codahale.metrics</groupId>
             <artifactId>metrics-graphite</artifactId>
-            <version>${metrics-graphite.version}</version>
+            <version>${metrics.version}</version>
             <exclusions>
                 <exclusion>
                     <groupId>org.slf4j</groupId>
@@ -77,7 +75,7 @@
         <dependency>
             <groupId>com.codahale.metrics</groupId>
             <artifactId>metrics-jvm</artifactId>
-            <version>${metrics-jvm.version}</version>
+            <version>${metrics.version}</version>
             <exclusions>
                 <exclusion>
                     <groupId>org.slf4j</groupId>
@@ -88,7 +86,7 @@
         <dependency>
             <groupId>org.clojars.brenden</groupId>
             <artifactId>metrics-cassandra</artifactId>
-            <version>${metrics-cassandra.version}</version>
+            <version>${metrics.version}</version>
             <exclusions>
                 <exclusion>
                     <groupId>org.slf4j</groupId>
@@ -135,7 +133,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>2.0</version>
+                <version>2.2</version>
                 <configuration>
                     <filters>
                         <filter>

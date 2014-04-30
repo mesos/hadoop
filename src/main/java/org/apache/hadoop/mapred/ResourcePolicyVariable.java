@@ -50,7 +50,7 @@ public class ResourcePolicyVariable extends ResourcePolicy {
             reduceFactor = 0.75;
           }
         }
-        mapSlots = Math.min(Math.min((long)Math.round(mapFactor * slots), mapSlotsMax), neededMapSlots);
+        mapSlots = Math.min(Math.min((long)Math.max(Math.round(mapFactor * slots), 1), mapSlotsMax), neededMapSlots);
 
         // The remaining slots are allocated for reduces.
         slots -= mapSlots;
