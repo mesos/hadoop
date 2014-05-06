@@ -499,7 +499,7 @@ public class ResourcePolicy {
             .setData(ByteString.copyFrom(bytes))
             .build();
 
-        schedulerDriver.launchTasks(offer.getId(), Arrays.asList(info));
+        schedulerDriver.launchTasks(Arrays.asList(offer.getId()), Arrays.asList(info));
 
         neededMapSlots -= mapSlots;
         neededReduceSlots -= reduceSlots;
