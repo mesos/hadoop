@@ -89,16 +89,12 @@ public class MesosTracker {
           // still running (lazy GC).
           final Set<JobID> jobsCopy = new HashSet<JobID>(MesosTracker.this.jobs);
           for (JobID id : jobsCopy) {
-            try {
-              JobStatus jobStatus = MesosTracker.this.scheduler.jobTracker.getJobStatus(id);
-              if (jobStatus == null || jobStatus.isJobComplete()) {
-                if (MesosTracker.this.scheduler.metrics != null) {
-                  MesosTracker.this.scheduler.metrics.periodicGC.mark();
-                }
-                MesosTracker.this.jobs.remove(id);
+            JobStatus jobStatus = MesosTracker.this.scheduler.jobTracker.getJobStatus(id);
+            if (jobStatus == null || jobStatus.isJobComplete()) {
+              if (MesosTracker.this.scheduler.metrics != null) {
+                MesosTracker.this.scheduler.metrics.periodicGC.mark();
               }
-            } catch (java.io.IOException e) {
-              LOG.warn("Unable to get job status", e);
+              MesosTracker.this.jobs.remove(id);
             }
           }
           schedulePeriodic();
