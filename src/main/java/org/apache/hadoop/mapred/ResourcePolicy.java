@@ -373,7 +373,7 @@ public class ResourcePolicy {
         String containerImage = scheduler.conf.get("mapred.mesos.container.image");
         String[] containerOptions = scheduler.conf.getStrings("mapred.mesos.container.options");
 
-        if (containerImage != null || containerOptions.length > 0) {
+        if (containerImage != null || (containerOptions != null && containerOptions.length > 0)) {
           CommandInfo.ContainerInfo.Builder containerInfo =
               CommandInfo.ContainerInfo.newBuilder();
 
