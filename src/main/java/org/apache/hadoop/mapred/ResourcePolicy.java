@@ -381,8 +381,10 @@ public class ResourcePolicy {
             containerInfo.setImage(containerImage);
           }
 
-          for (int i = 0; i < containerOptions.length; i++) {
-            containerInfo.addOptions(containerOptions[i]);
+          if (containerOptions != null) {
+            for (int i = 0; i < containerOptions.length; i++) {
+              containerInfo.addOptions(containerOptions[i]);
+            }
           }
 
           commandInfo.setContainer(containerInfo.build());
