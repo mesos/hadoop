@@ -140,7 +140,7 @@ As of Mesos 0.19.0 you can now specify a container to be used when isolating a t
 
 This feature can be especially useful if your hadoop jobs have software dependencies on the slaves themselves, as using a container can isolate these dependencies between other users of a Mesos cluster.
 
-*It's important to note that if the container/image you use does need to have the mesos native library installed already.*
+*It's important to note that the container/image you use does need to have the mesos native library installed already.*
 
 ```
 <property>
