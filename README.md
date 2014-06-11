@@ -3,7 +3,7 @@ Hadoop on Mesos
 
 #### Overview ####
 
-To run _Hadoop on Mesos_ you need to add the `hadoop-mesos-0.0.6.jar`
+To run _Hadoop on Mesos_ you need to add the `hadoop-mesos-0.0.7.jar`
 library to your Hadoop distribution (any distribution that supports
 `hadoop-core-1.2.1` should work) and set some new configuration
 properties. Read on for details.
@@ -19,13 +19,13 @@ install `libsnappy`.  The [`snappy-java`][snappy-java] package also includes a b
 
 #### Build ####
 
-You can build `hadoop-mesos-0.0.6.jar` using Maven:
+You can build `hadoop-mesos-0.0.7.jar` using Maven:
 
 ```
 $ mvn package
 ```
 
-If successful, the JAR will be at `target/hadoop-mesos-0.0.6.jar`.
+If successful, the JAR will be at `target/hadoop-mesos-0.0.7.jar`.
 
 > NOTE: If you want to build against a different version of Mesos than
 > the default you'll need to update `mesos-version` in `pom.xml`.
@@ -47,10 +47,10 @@ $ tar zxf mr1-2.0.0-mr1-cdh4.2.2.tar.gz
 
 > **Take note**, the extracted directory is `hadoop-2.0.0-mr1-cdh4.2.2`.
 
-Now copy `hadoop-mesos-0.0.6.jar` into the `lib` folder.
+Now copy `hadoop-mesos-0.0.7.jar` into the `lib` folder.
 
 ```
-$ cp /path/to/hadoop-mesos-0.0.6.jar hadoop-2.0.0-mr1-cdh4.2.2/lib/
+$ cp /path/to/hadoop-mesos-0.0.7.jar hadoop-2.0.0-mr1-cdh4.2.2/lib/
 ```
 
 _That's it!_ You now have a _Hadoop on Mesos_ distribution!
@@ -133,6 +133,25 @@ $ MESOS_NATIVE_LIBRARY=/path/to/libmesos.dylib hadoop jobtracker
 > `JobTracker` **along with any necessary** `TaskTracker` **specific
 > _overrides_ will get serialized and passed to each** `TaskTracker`
 > **on startup.**
+
+#### Containers ####
+
+As of Mesos 0.19.0 you can now specify a container to be used when isolating a task on a Mesos Slave. If you're making use of this new container mechanism, you can configure the hadoop jobtracker to send a custom container image and set of options using two new JobConf options.
+
+This feature can be especially useful if your hadoop jobs have software dependencies on the slaves themselves, as using a container can isolate these dependencies between other users of a Mesos cluster.
+
+*It's important to note that if the container/image you use does need to have the mesos native library installed already.*
+
+```
+<property>
+  <name>mapred.mesos.container.image</name>
+  <value>docker:///ubuntu</value>
+</property>
+<property>
+  <name>mapred.mesos.container.options</name>
+  <value>-v,/foo/bar:/bar</value>
+</property>
+```
 
 _Please email user@mesos.apache.org with questions!_
 
