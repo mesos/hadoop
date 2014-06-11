@@ -134,6 +134,24 @@ default values.
     </description>
   </property>
 
+  <!-- If you're using a custom Mesos Containerizer -->
+  <property>
+    <name>mapred.mesos.container.image</name>
+    <value>docker:///ubuntu</value>
+    <description>
+      If you're using a custom Mesos Containerizer (like the External Containerizer)
+      that uses images, you can set this option to cause Hadoop TaskTrackers to
+      be launched within this container image.
+    </description>
+  </property>
+  <property>
+    <name>mapred.mesos.container.options</name>
+    <value></value>
+    <description>
+      Comma separated list of options to pass to the containerizer. The meaning
+      of this entirely depends on the containerizer in use.
+    </description>
+  </property>
 
   <!-- Metrics -->
   <property>

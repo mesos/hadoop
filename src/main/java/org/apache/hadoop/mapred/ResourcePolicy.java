@@ -335,7 +335,6 @@ public class ResourcePolicy {
         }
 
         // Command info differs when performing a local run.
-        CommandInfo commandInfo = null;
         String master = scheduler.conf.get("mapred.mesos.master");
 
         if (master == null) {
@@ -364,10 +363,32 @@ public class ResourcePolicy {
           command = "env ; ./bin/hadoop org.apache.hadoop.mapred.MesosExecutor";
         }
 
-        commandInfo = CommandInfo.newBuilder()
+        CommandInfo.Builder commandInfo = CommandInfo.newBuilder();
+        commandInfo
             .setEnvironment(envBuilder)
             .setValue(String.format("cd %s && %s", directory, command))
-            .addUris(CommandInfo.URI.newBuilder().setValue(uri)).build();
+            .addUris(CommandInfo.URI.newBuilder().setValue(uri));
+
+        // Populate ContainerInfo if needed
+        String containerImage = scheduler.conf.get("mapred.mesos.container.image");
+        String[] containerOptions = scheduler.conf.getStrings("mapred.mesos.container.options");
+
+        if (containerImage != null || (containerOptions != null && containerOptions.length > 0)) {
+          CommandInfo.ContainerInfo.Builder containerInfo =
+              CommandInfo.ContainerInfo.newBuilder();
+
+          if (containerImage != null) {
+            containerInfo.setImage(containerImage);
+          }
+
+          if (containerOptions != null) {
+            for (int i = 0; i < containerOptions.length; i++) {
+              containerInfo.addOptions(containerOptions[i]);
+            }
+          }
+
+          commandInfo.setContainer(containerInfo.build());
+        }
 
         // Create a configuration from the current configuration and
         // override properties as appropriate for the TaskTracker.
@@ -474,7 +495,7 @@ public class ResourcePolicy {
                             .setType(Value.Type.SCALAR)
                             .setRole(memRole)
                             .setScalar(Value.Scalar.newBuilder().setValue(containerMem)))
-                    .setCommand(commandInfo))
+                    .setCommand(commandInfo.build()))
             .setData(ByteString.copyFrom(bytes))
             .build();
 
