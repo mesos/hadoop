@@ -138,6 +138,8 @@ $ MESOS_NATIVE_LIBRARY=/path/to/libmesos.dylib hadoop jobtracker
 
 As of Mesos 0.19.0 you can now specify a container to be used when isolating a task on a Mesos Slave. If you're making use of this new container mechanism, you can configure the hadoop jobtracker to send a custom container image and set of options using two new JobConf options.
 
+This is purely opt-in, so omitting these jobconf options will cause no `ContainerInfo` to be sent to Mesos. Also, if you don't use these options there's no requirement to use version 0.19.0 of the mesos native library.
+
 This feature can be especially useful if your hadoop jobs have software dependencies on the slaves themselves, as using a container can isolate these dependencies between other users of a Mesos cluster.
 
 *It's important to note that the container/image you use does need to have the mesos native library installed already.*
