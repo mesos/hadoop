@@ -174,10 +174,9 @@ default values.
   </property>
   <property>
     <name>mapred.mesos.metrics.csv.path</name>
-    <value>/path/to/metrics/csv/</value>
+    <value>/path/to/metrics/csv/metrics.csv</value>
     <description>
-      Set this to `true` to enable CSV reporting with the Coda Hale Metrics
-      library.
+      Set this to a file which will be created with CSV metrics data.
     </description>
     <property>
       <name>mapred.mesos.metrics.csv.interval</name>
@@ -197,6 +196,10 @@ default values.
   <property>
     <name>mapred.mesos.metrics.graphite.host</name>
     <value>graphite.host.name</value>
+  </property>
+  <property>
+    <name>mapred.mesos.metrics.graphite.port</name>
+    <value>2003</value>
   </property>
   <property>
     <name>mapred.mesos.metrics.graphite.prefix</name>
