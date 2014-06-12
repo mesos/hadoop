@@ -52,12 +52,12 @@ default values.
   <property>
     <name>mapred.mesos.slot.cpus</name>
     <value>1</value>
-    <description>This is the amount of CPU share allocated per slot.  This number may be fractional (i.e., 0.5).</description>
+    <description>This is the amount of CPU share allocated per slot. This number may be fractional (i.e., 0.5).</description>
   </property>
   <property>
     <name>mapred.mesos.slot.disk</name>
     <value>1024</value>
-    <description>This is the disk space required per slot.  The value is in
+    <description>This is the disk space required per slot. The value is in
       MiB.</description>
   </property>
   <property>
@@ -75,7 +75,7 @@ default values.
     <value>0</value>
     <description>
       Mesos will attempt to make at least this many number of map slots
-      available at a given time.  This does not necessarily mean the slots will
+      available at a given time. This does not necessarily mean the slots will
       be idle, and this does not guarantee these slots will be available.
     </description>
   </property>
@@ -112,7 +112,7 @@ default values.
     <description>
       If this is set to true, Mesos will always allocate a fixed number of
       slots per task tracker based on the maximum map/reduce slot
-      specification.  If a resource offer is not large enough for the number of
+      specification. If a resource offer is not large enough for the number of
       slots specified, that resource offer will be declined.
     </description>
   </property>
@@ -129,8 +129,8 @@ default values.
     <name>mapred.mesos.role</name>
     <value>*</value>
     <description>
-      This is the Mesos framework role.  This can be used in conjunction with
-      Mesos reservations.  Consult the Mesos documentation for details.
+      This is the Mesos framework role. This can be used in conjunction with
+      Mesos reservations. Consult the Mesos documentation for details.
     </description>
   </property>
 
