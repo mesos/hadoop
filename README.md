@@ -1,6 +1,8 @@
 Hadoop on Mesos
 ---------------
 
+[![Build Status](https://travis-ci.org/mesos/hadoop.svg?branch=master)](https://travis-ci.org/mesos/hadoop)
+
 #### Overview ####
 
 To run _Hadoop on Mesos_ you need to add the `hadoop-mesos-0.0.7.jar`
