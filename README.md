@@ -6,9 +6,11 @@ Hadoop on Mesos
 #### Overview ####
 
 To run _Hadoop on Mesos_ you need to add the `hadoop-mesos-0.0.7.jar`
-library to your Hadoop distribution (any distribution that supports
-`hadoop-core-1.2.1` should work) and set some new configuration
-properties. Read on for details.
+library to your Hadoop distribution (any distribution that uses protobuf > 2.5.0)
+and set some new configuration properties. Read on for details.
+
+The `pom.xml` included is configured and tested against CDH5 and MRv1. Hadoop on
+Mesos does not currently support YARN (and MRv2).
 
 #### Prerequisites ####
 
@@ -23,8 +25,8 @@ install `libsnappy`.  The [`snappy-java`][snappy-java] package also includes a b
 
 You can build `hadoop-mesos-0.0.7.jar` using Maven:
 
-```
-$ mvn package
+```shell
+mvn package
 ```
 
 If successful, the JAR will be at `target/hadoop-mesos-0.0.7.jar`.
@@ -38,26 +40,48 @@ in the near future!
 #### Package ####
 
 You'll need to download an existing Hadoop distribution. For this
-guide, we'll use [CDH4.2.2][CDH4.2.2]. First grab the tar archive and
+guide, we'll use [CDH5][CDH5.0.2]. First grab the tar archive and
 extract it.
 
-```
-$ wget http://archive.cloudera.com/cdh4/cdh/4/mr1-2.0.0-mr1-cdh4.2.2.tar.gz
+```shell
+wget http://archive.cloudera.com/cdh5/cdh/5/hadoop-2.3.0-cdh5.0.2.tar.gz
 ...
-$ tar zxf mr1-2.0.0-mr1-cdh4.2.2.tar.gz
+tar zxf hadoop-2.3.0-cdh5.0.2.tar.gz
 ```
 
-> **Take note**, the extracted directory is `hadoop-2.0.0-mr1-cdh4.2.2`.
+> **Take note**, the extracted directory is `hadoop-2.3.0-cdh5.0.2`.
 
-Now copy `hadoop-mesos-0.0.7.jar` into the `lib` folder.
+Now copy `hadoop-mesos-0.0.7.jar` into the `share/hadoop/common/lib` folder.
 
+```shell
+cp /path/to/hadoop-mesos-0.0.7.jar hadoop-2.3.0-cdh5.0.2/share/hadoop/common/lib/
 ```
-$ cp /path/to/hadoop-mesos-0.0.7.jar hadoop-2.0.0-mr1-cdh4.2.2/lib/
+
+Since CDH5 includes both MRv1 and MRv2 (YARN) and is configured for YARN by
+default, we need update the symlinks to point to the correct directories.
+
+```shell
+cd hadoop-2.3.0-cdh5.0.2
+
+mv bin bin-mapreduce2
+mv examples examples-mapreduce2 
+ln -s bin-mapreduce1 bin
+ln -s examples-mapreduce1 examples
+
+pushd etc
+mv hadoop hadoop-mapreduce2
+ln -s hadoop-mapreduce1 hadoop
+popd
+
+pushd share/hadoop
+rm mapreduce
+ln -s mapreduce1 mapreduce
+popd
 ```
 
 _That's it!_ You now have a _Hadoop on Mesos_ distribution!
 
-[CDH4.2.2]: http://www.cloudera.com/content/support/en/documentation/cdh4-documentation/cdh4-documentation-v4-2-2.html
+[CDH5.0.2]: http://www.cloudera.com/content/support/en/documentation/cdh5-documentation/cdh5-documentation-v5-latest.html
 
 #### Upload ####
 
@@ -66,8 +90,8 @@ that Mesos can access in order to launch each `TaskTracker`. For
 example, if you're already running HDFS:
 
 ```
-$ tar czf hadoop-2.0.0-mr1-cdh4.2.2.tar.gz hadoop-2.0.0-mr1-cdh4.2.2
-$ hadoop fs -put hadoop-2.0.0-mr1-cdh4.2.2.tar.gz /hadoop-2.0.0-mr1-cdh4.2.2.tar.gz
+$ tar czf hadoop-2.3.0-cdh5.0.2.tar.gz hadoop-2.3.0-cdh5.0.2
+$ hadoop fs -put hadoop-2.3.0-cdh5.0.2.tar.gz /hadoop-2.3.0-cdh5.0.2.tar.gz
 ```
 
 > **Consider** any permissions issues with your uploaded location
@@ -107,7 +131,7 @@ operation](http://hadoop.apache.org/docs/stable/single_node_setup.html#PseudoDis
 </property>
 <property>
   <name>mapred.mesos.executor.uri</name>
-  <value>hdfs://localhost:9000/hadoop-2.0.0-mr1-cdh4.2.2.tar.gz</value>
+  <value>hdfs://localhost:9000/hadoop-2.3.0-cdh5.0.2.tar.gz</value>
 </property>
 ```
 
