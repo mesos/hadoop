@@ -394,9 +394,6 @@ public class ResourcePolicy {
         // override properties as appropriate for the TaskTracker.
         Configuration overrides = new Configuration(scheduler.conf);
 
-        overrides.set("mapred.job.tracker",
-            jobTrackerAddress.getHostName() + ':' + jobTrackerAddress.getPort());
-
         overrides.set("mapred.task.tracker.http.address",
             httpAddress.getHostName() + ':' + httpAddress.getPort());
 
