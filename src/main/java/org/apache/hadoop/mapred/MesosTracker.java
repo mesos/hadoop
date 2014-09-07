@@ -59,7 +59,7 @@ public class MesosTracker {
         // Here we do a final check with the JobTracker to make sure this
         // TaskTracker is really not there before we kill it.
         final Collection<TaskTrackerStatus> taskTrackers =
-          MesosTracker.this.scheduler.jobTracker.taskTrackers();
+            MesosTracker.this.scheduler.jobTracker.taskTrackers();
 
         for (TaskTrackerStatus status : taskTrackers) {
           HttpHost host = new HttpHost(status.getHost(), status.getHttpPort());
@@ -84,7 +84,7 @@ public class MesosTracker {
       @Override
       public void run() {
         if (MesosTracker.this.scheduler.mesosTrackers.containsKey(host) &&
-          MesosTracker.this == MesosTracker.this.scheduler.mesosTrackers.get(host)) {
+            MesosTracker.this == MesosTracker.this.scheduler.mesosTrackers.get(host)) {
           // Periodically check if the jobs assigned to this TaskTracker are
           // still running (lazy GC).
           final Set<JobID> jobsCopy = new HashSet<JobID>(MesosTracker.this.jobs);

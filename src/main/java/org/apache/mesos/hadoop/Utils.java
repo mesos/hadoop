@@ -7,9 +7,6 @@ import java.io.StringReader;
 import java.io.StringWriter;
 
 public class Utils {
-
-
-
   public static String formatXml(String source) throws TransformerException {
     Source xmlInput = new StreamSource(new StringReader(source));
     StringWriter stringWriter = new StringWriter();

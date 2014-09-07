@@ -9,10 +9,7 @@ import org.apache.mesos.Protos.*;
 import org.apache.mesos.Protos.TaskID;
 import org.apache.mesos.Protos.TaskStatus;
 
-import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
-import java.io.IOException;
-import java.io.StringWriter;
+import java.io.*;
 
 public class MesosExecutor implements Executor {
   public static final Log LOG = LogFactory.getLog(MesosExecutor.class);
@@ -30,7 +27,7 @@ public class MesosExecutor implements Executor {
       byte[] bytes = task.getData().toByteArray();
       conf.readFields(new DataInputStream(new ByteArrayInputStream(bytes)));
     } catch (IOException e) {
-      LOG.warn("Failed to deserialize configuraiton.", e);
+      LOG.warn("Failed to deserialize configuration.", e);
       System.exit(1);
     }
 
@@ -40,8 +37,10 @@ public class MesosExecutor implements Executor {
       conf.writeXml(writer);
       writer.flush();
       String xml = writer.getBuffer().toString();
+      String xmlFormatted =
+          org.apache.mesos.hadoop.Utils.formatXml(xml);
       LOG.info("XML Configuration received:\n" +
-               org.apache.mesos.hadoop.Utils.formatXml(xml));
+          xmlFormatted);
     } catch (Exception e) {
       LOG.warn("Failed to output configuration as XML.", e);
     }
