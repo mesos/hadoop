@@ -6,6 +6,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.TaskType;
+import org.apache.hadoop.util.StringUtils;
 import org.apache.mesos.Protos;
 import org.apache.mesos.Protos.*;
 import org.apache.mesos.Protos.TaskID;
@@ -312,13 +313,35 @@ public class ResourcePolicy {
         scheduler.mesosTrackers.put(httpAddress, new MesosTracker(httpAddress, taskId,
             mapSlots, reduceSlots, scheduler));
 
+        List<String> jvmOpts = Arrays.asList(
+            "-XX:+UseConcMarkSweepGC",
+            "-XX:+CMSParallelRemarkEnabled",
+            "-XX:+CMSClassUnloadingEnabled",
+            "-XX:+UseParNewGC",
+            "-XX:TargetSurvivorRatio=80",
+            "-XX:+UseTLAB",
+            "-XX:ParallelGCThreads=2",
+            "-XX:+AggressiveOpts",
+            "-XX:+UseCompressedOops",
+            "-XX:+UseFastEmptyMethods",
+            "-XX:+UseFastAccessorMethods",
+            "-Xss512k",
+            "-XX:+AlwaysPreTouch",
+            "-XX:CMSInitiatingOccupancyFraction=80"
+        );
+
         // Set up the environment for running the TaskTracker.
         Protos.Environment.Builder envBuilder = Protos.Environment
             .newBuilder()
             .addVariables(
                 Protos.Environment.Variable.newBuilder()
-                    .setName("HADOOP_HEAPSIZE")
-                    .setValue("" + tasktrackerJVMHeap));
+                    .setName("HADOOP_OPTS")
+                    .setValue(
+                        StringUtils.join(" ", jvmOpts) +
+                            " -Xmx" + tasktrackerJVMHeap + "m" +
+                            " -XX:NewSize=" + tasktrackerJVMHeap / 3 + "m -XX:MaxNewSize=" + (int)Math.floor
+                            (tasktrackerJVMHeap * 0.6) + "m"
+                    ));
 
         // Set java specific environment, appropriately.
         Map<String, String> env = System.getenv();
@@ -400,23 +423,12 @@ public class ResourcePolicy {
         overrides.set("mapred.task.tracker.report.address",
             reportAddress.getHostName() + ':' + reportAddress.getPort());
 
-        overrides.set("mapred.child.java.opts",
-            scheduler.conf.get("mapred.child.java.opts") +
-                " -XX:+UseParallelGC -Xmx" + slotJVMHeap + "m -Xms" + slotJVMHeap + "m");
-
-        overrides.set("mapred.map.child.java.opts",
-            scheduler.conf.get("mapred.map.child.java.opts") +
-                " -XX:+UseParallelGC -Xmx" + slotJVMHeap + "m -Xms" + slotJVMHeap + "m");
-
-        overrides.set("mapred.reduce.child.java.opts",
-            scheduler.conf.get("mapred.reduce.child.java.opts") +
-                " -XX:+UseParallelGC -Xmx" + slotJVMHeap + "m -Xms" + slotJVMHeap + "m");
-
         overrides.setLong("mapred.tasktracker.map.tasks.maximum",
             mapSlots);
 
         overrides.setLong("mapred.tasktracker.reduce.tasks.maximum",
             reduceSlots);
+
 
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try {
