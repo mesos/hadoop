@@ -18,7 +18,7 @@
         <hadoop-client.version>2.3.0-mr1-cdh5.1.3</hadoop-client.version>
         <mesos.version>0.20.0</mesos.version>
         <protobuf.version>2.5.0</protobuf.version>
-        <metrics.version>3.0.2</metrics.version>
+        <metrics.version>3.1.0</metrics.version>
         <snappy-java.version>1.0.5</snappy-java.version>
 
         <!-- test deps versions -->
@@ -72,7 +72,7 @@
             <version>${protobuf.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.codahale.metrics</groupId>
+            <groupId>io.dropwizard.metrics</groupId>
             <artifactId>metrics-graphite</artifactId>
             <version>${metrics.version}</version>
             <exclusions>
@@ -83,7 +83,7 @@
             </exclusions>
         </dependency>
         <dependency>
-            <groupId>com.codahale.metrics</groupId>
+            <groupId>io.dropwizard.metrics</groupId>
             <artifactId>metrics-jvm</artifactId>
             <version>${metrics.version}</version>
             <exclusions>
