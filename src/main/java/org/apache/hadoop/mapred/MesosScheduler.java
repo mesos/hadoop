@@ -241,6 +241,10 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     HttpHost tracker = new HttpHost(taskTracker.getStatus().getHost(),
         taskTracker.getStatus().getHttpPort());
 
+    if (!mesosTrackers.containsKey(tracker)) {
+      LOG.info("Unknown/exited TaskTracker: " + tracker + ". ");
+      return null;
+    }
     // Let the underlying task scheduler do the actual task scheduling.
     List<Task> tasks = taskScheduler.assignTasks(taskTracker);
 
@@ -251,11 +255,7 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
 
     // Keep track of which TaskTracker contains which tasks.
     for (Task task : tasks) {
-      if (mesosTrackers.containsKey(tracker)) {
-        mesosTrackers.get(tracker).jobs.add(task.getJobID());
-      } else {
-        LOG.info("Unknown/exited TaskTracker: " + tracker + ". ");
-      }
+      mesosTrackers.get(tracker).jobs.add(task.getJobID());
     }
 
     return tasks;
