@@ -267,6 +267,8 @@ public class ResourcePolicy {
               !memRole.equals(expectedRole) ||
               !diskRole.equals(expectedRole) ||
               !portsRole.equals(expectedRole)) {
+            LOG.info("Declining offer with invalid role " + expectedRole);
+
             schedulerDriver.declineOffer(offer.getId());
             continue;
           }
