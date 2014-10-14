@@ -260,6 +260,20 @@ public class ResourcePolicy {
           }
         }
 
+        // Verify the resource roles are what we need
+        if (scheduler.conf.getBoolean("mapred.mesos.role.strict", false)) {
+          String expectedRole = scheduler.conf.get("mapred.mesos.role", "*");
+          if (!cpuRole.equals(expectedRole) ||
+              !memRole.equals(expectedRole) ||
+              !diskRole.equals(expectedRole) ||
+              !portsRole.equals(expectedRole)) {
+            LOG.info("Declining offer with invalid role " + expectedRole);
+
+            schedulerDriver.declineOffer(offer.getId());
+            continue;
+          }
+        }
+
         final boolean sufficient = computeSlots();
 
         double taskCpus = (mapSlots + reduceSlots) * slotCpus + containerCpus;

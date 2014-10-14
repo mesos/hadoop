@@ -133,6 +133,14 @@ default values.
       Mesos reservations. Consult the Mesos documentation for details.
     </description>
   </property>
+  <property>
+    <name>mapred.mesos.role.strict</name>
+    <value>false</value>
+    <description>
+      Force the framework to only ever accept resource offers that are of the
+      role configured in "mapred.mesos.role".
+    </description>
+  </property>
 
   <!-- If you're using a custom Mesos Containerizer -->
   <property>
