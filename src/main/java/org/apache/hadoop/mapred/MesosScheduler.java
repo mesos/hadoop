@@ -248,6 +248,19 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
       LOG.info("Unknown/exited TaskTracker: " + tracker + ". ");
       return null;
     }
+
+    MesosTracker mesosTracker = mesosTrackers.get(tracker);
+
+    // Make sure we're not asked to assign tasks to any task trackers that have
+    // been stopped. This could happen while the task tracker has not been
+    // removed from the cluster e.g still in the heartbeat timeout period.
+    synchronized (this) {
+      if (mesosTracker.stopped) {
+        LOG.info("Asked to assign tasks to stopped tracker " + tracker + ".");
+        return null;
+      }
+    }
+
     // Let the underlying task scheduler do the actual task scheduling.
     List<Task> tasks = taskScheduler.assignTasks(taskTracker);
 
@@ -258,7 +271,7 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
 
     // Keep track of which TaskTracker contains which tasks.
     for (Task task : tasks) {
-      mesosTrackers.get(tracker).jobs.add(task.getJobID());
+      mesosTracker.jobs.add(task.getJobID());
     }
 
     return tasks;

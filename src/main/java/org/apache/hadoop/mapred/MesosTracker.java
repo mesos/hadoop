@@ -27,7 +27,6 @@ public class MesosTracker {
   public volatile long idleCheckMax = 0;
   public volatile boolean active = false; // Set once tracked by the JobTracker.
   public volatile boolean stopped = false;
-  public volatile boolean killed = false;
   public volatile MesosScheduler scheduler;
   // Tracks Hadoop jobs running on the tracker.
   public Set<JobID> jobs = Collections.newSetFromMap(new ConcurrentHashMap<JobID, Boolean>());
@@ -96,9 +95,8 @@ public class MesosTracker {
     scheduler.scheduleTimer(new Runnable() {
       @Override
       public void run() {
-        // We're not interested if the task tracker has been stopped or slots
-        // have already been revoked.
-        if (MesosTracker.this.stopped || MesosTracker.this.killed) {
+        // We're not interested if the task tracker has been stopped.
+        if (MesosTracker.this.stopped) {
           return;
         }
 
