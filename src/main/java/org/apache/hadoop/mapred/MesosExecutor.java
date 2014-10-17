@@ -136,11 +136,6 @@ public class MesosExecutor implements Executor {
     if (taskTracker != null) {
         LOG.info("Revoking task tracker map/reduce slots");
         revokeSlots();
-
-        driver.sendStatusUpdate(TaskStatus.newBuilder()
-            .setTaskId(taskId)
-            .setState(TaskState.TASK_FINISHED)
-            .build());
     }
   }
 
