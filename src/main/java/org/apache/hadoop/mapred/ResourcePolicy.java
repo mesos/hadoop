@@ -78,6 +78,7 @@ public class ResourcePolicy {
     int pendingReduces = 0;
     int runningMaps = 0;
     int runningReduces = 0;
+
     for (JobInProgress progress : jobsInProgress) {
       // JobStatus.pendingMaps/Reduces may return the wrong value on
       // occasion.  This seems to be safer.
@@ -85,6 +86,12 @@ public class ResourcePolicy {
       pendingReduces += scheduler.getPendingTasks(progress.getTasks(TaskType.REDUCE));
       runningMaps += progress.runningMaps();
       runningReduces += progress.runningReduces();
+
+      // If the task is waiting to launch the cleanup task, let us make sure we have
+      // capacity to run the task.
+      if (!progress.isCleanupLaunched()) {
+        pendingMaps += scheduler.getPendingTasks(progress.getTasks(TaskType.JOB_CLEANUP));
+      }
     }
 
     // Mark active (heartbeated) TaskTrackers and compute idle slots.
