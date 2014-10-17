@@ -36,8 +36,9 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   public static final double SLOT_CPUS_DEFAULT = 1; // 1 cores.
   public static final int SLOT_DISK_DEFAULT = 1024; // 1 GB.
   public static final int SLOT_JVM_HEAP_DEFAULT = 1024; // 1024MB.
-  public static final double TASKTRACKER_CPUS = 1.0; // 1 core.
+  public static final double TASKTRACKER_CPUS_DEFAULT = 1.0; // 1 core.
   public static final int TASKTRACKER_MEM_DEFAULT = 1024; // 1 GB.
+  public static final int TASKTRACKER_DISK_DEFAULT = 1024; // 1 GB.
   // The default behavior in Hadoop is to use 4 slots per TaskTracker:
   public static final int MAP_SLOTS_DEFAULT = 2;
   public static final int REDUCE_SLOTS_DEFAULT = 2;

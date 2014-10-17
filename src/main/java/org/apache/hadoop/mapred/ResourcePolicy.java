@@ -64,11 +64,11 @@ public class ResourcePolicy {
         (MesosScheduler.JVM_MEM_OVERHEAD_PERCENT_DEFAULT + 1));
 
     containerCpus = scheduler.conf.getFloat("mapred.mesos.tasktracker.cpus",
-        (float) MesosScheduler.TASKTRACKER_CPUS);
+        (float) MesosScheduler.TASKTRACKER_CPUS_DEFAULT);
+    containerDisk = scheduler.conf.getInt("mapred.mesos.tasktracker.disk",
+        MesosScheduler.TASKTRACKER_DISK_DEFAULT);
 
     containerMem = tasktrackerMem;
-    containerDisk = 0;
-
   }
 
   public void computeNeededSlots(List<JobInProgress> jobsInProgress,
