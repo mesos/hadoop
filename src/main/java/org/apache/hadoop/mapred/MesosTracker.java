@@ -113,6 +113,7 @@ public class MesosTracker {
         // but are completely idle. The MesosScheduler is in charge of destroying
         // task trackers that are not handling any jobs, so we can leave those alone.
         if (MesosTracker.this.idleCounter >= MesosTracker.this.idleCheckMax) {
+          LOG.info("Killing idle tasktracker: " + MesosTracker.this.host);
           MesosTracker.this.scheduler.killTracker(MesosTracker.this);
           return;
         }
