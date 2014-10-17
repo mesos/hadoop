@@ -134,8 +134,19 @@ public class MesosExecutor implements Executor {
   public void killTask(final ExecutorDriver driver, final TaskID taskId) {
     LOG.info("Killing task : " + taskId.getValue());
     if (taskTracker != null) {
-        LOG.info("Revoking task tracker map/reduce slots");
-        revokeSlots();
+      LOG.info("Revoking task tracker map/reduce slots");
+      revokeSlots();
+
+      // Send the TASK_FINISHED status
+      new Thread("TaskFinishedUpdate") {
+        @Override
+        public void run() {
+          driver.sendStatusUpdate(TaskStatus.newBuilder()
+            .setTaskId(taskId)
+            .setState(TaskState.TASK_FINISHED)
+            .build());
+        }
+      }.start();
     }
   }
 
