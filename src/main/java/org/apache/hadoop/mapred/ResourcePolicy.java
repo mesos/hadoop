@@ -495,7 +495,7 @@ public class ResourcePolicy {
         // Create the TaskTracker TaskInfo
         TaskInfo trackerTaskInfo = TaskInfo
             .newBuilder()
-            .setName("tasktracker_" + taskId.getValue())
+            .setName(taskId.getValue())
             .setTaskId(taskId)
             .setSlaveId(offer.getSlaveId())
             .addResources(
