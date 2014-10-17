@@ -171,11 +171,8 @@ public class MesosExecutor implements Executor {
       return;
     }
 
-    int mapSlotsToRevoke = taskTracker.getJobConf().getInt("mapred.tasktracker.map.tasks.revoke", 0);
-    int reduceSlotsToRevoke = taskTracker.getJobConf().getInt("mapred.tasktracker.reduce.tasks.revoke", 0);
-
-    int maxMapSlots = taskTracker.getMaxCurrentMapTasks() - mapSlotsToRevoke;
-    int maxReduceSlots = taskTracker.getMaxCurrentReduceTasks() - reduceSlotsToRevoke;
+    int maxMapSlots = 0;
+    int maxReduceSlots = 0;
 
     // TODO(tarnfeld): Sanity check that it's safe for us to change the slots.
     // Be sure there's nothing running and nothing in the launcher queue.
