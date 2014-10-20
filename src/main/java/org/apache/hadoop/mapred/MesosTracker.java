@@ -138,7 +138,9 @@ public class MesosTracker {
           LOG.info("TaskTracker appears idle right now: " + MesosTracker.this.host);
           MesosTracker.this.idleCounter += 1;
         } else {
-          LOG.debug("TaskTracker is no longer idle: " + MesosTracker.this.host);
+          if (MesosTracker.this.idleCounter > 0) {
+            LOG.info("TaskTracker is no longer idle: " + MesosTracker.this.host);
+          }
           MesosTracker.this.idleCounter = 0;
         }
 
