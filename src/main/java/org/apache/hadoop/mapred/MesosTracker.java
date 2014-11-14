@@ -115,6 +115,7 @@ public class MesosTracker {
         if (MesosTracker.this.idleCounter >= MesosTracker.this.idleCheckMax) {
           LOG.info("Killing idle tasktracker: " + MesosTracker.this.host);
           MesosTracker.this.scheduler.killTracker(MesosTracker.this);
+          scheduleIdleCheck();
           return;
         }
 
