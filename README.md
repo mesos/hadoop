@@ -44,24 +44,24 @@ guide, we'll use [CDH5][CDH5.1.3]. First grab the tar archive and
 extract it.
 
 ```shell
-wget http://archive.cloudera.com/cdh5/cdh/5/hadoop-2.3.0-cdh5.1.3.tar.gz
+wget http://archive.cloudera.com/cdh5/cdh/5/hadoop-2.5.0-cdh5.2.0.tar.gz
 ...
-tar zxf hadoop-2.3.0-cdh5.1.3.tar.gz
+tar zxf hadoop-2.5.0-cdh5.2.0.tar.gz
 ```
 
-> **Take note**, the extracted directory is `hadoop-2.3.0-cdh5.1.3`.
+> **Take note**, the extracted directory is `hadoop-2.5.0-cdh5.2.0`.
 
 Now copy `hadoop-mesos-0.0.8.jar` into the `share/hadoop/common/lib` folder.
 
 ```shell
-cp /path/to/hadoop-mesos-0.0.8.jar hadoop-2.3.0-cdh5.1.3/share/hadoop/common/lib/
+cp /path/to/hadoop-mesos-0.0.8.jar hadoop-2.5.0-cdh5.2.0/share/hadoop/common/lib/
 ```
 
 Since CDH5 includes both MRv1 and MRv2 (YARN) and is configured for YARN by
 default, we need update the symlinks to point to the correct directories.
 
 ```shell
-cd hadoop-2.3.0-cdh5.1.3
+cd hadoop-2.5.0-cdh5.2.0
 
 mv bin bin-mapreduce2
 mv examples examples-mapreduce2 
@@ -90,8 +90,8 @@ that Mesos can access in order to launch each `TaskTracker`. For
 example, if you're already running HDFS:
 
 ```
-$ tar czf hadoop-2.3.0-cdh5.1.3.tar.gz hadoop-2.3.0-cdh5.1.3
-$ hadoop fs -put hadoop-2.3.0-cdh5.1.3.tar.gz /hadoop-2.3.0-cdh5.1.3.tar.gz
+$ tar czf hadoop-2.5.0-cdh5.2.0.tar.gz hadoop-2.5.0-cdh5.2.0
+$ hadoop fs -put hadoop-2.5.0-cdh5.2.0.tar.gz /hadoop-2.5.0-cdh5.2.0.tar.gz
 ```
 
 > **Consider** any permissions issues with your uploaded location
@@ -131,7 +131,7 @@ operation](http://hadoop.apache.org/docs/stable/single_node_setup.html#PseudoDis
 </property>
 <property>
   <name>mapred.mesos.executor.uri</name>
-  <value>hdfs://localhost:9000/hadoop-2.3.0-cdh5.1.3.tar.gz</value>
+  <value>hdfs://localhost:9000/hadoop-2.5.0-cdh5.2.0.tar.gz</value>
 </property>
 ```
 
