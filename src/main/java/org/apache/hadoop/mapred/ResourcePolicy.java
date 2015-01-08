@@ -313,7 +313,7 @@ public class ResourcePolicy {
         scheduler.mesosTrackers.put(httpAddress, new MesosTracker(httpAddress, taskId,
             mapSlots, reduceSlots, scheduler));
 
-        List<String> jvmOpts = Arrays.asList(
+        List<String> defaultJvmOpts = Arrays.asList(
             "-XX:+UseConcMarkSweepGC",
             "-XX:+CMSParallelRemarkEnabled",
             "-XX:+CMSClassUnloadingEnabled",
@@ -330,6 +330,11 @@ public class ResourcePolicy {
             "-XX:CMSInitiatingOccupancyFraction=80"
         );
 
+        String jvmOpts = scheduler.conf.get("mapred.mesos.executor.jvm.opts");
+        if (jvmOpts == null) {
+            jvmOpts = StringUtils.join(" ", defaultJvmOpts);
+        }
+
         // Set up the environment for running the TaskTracker.
         Protos.Environment.Builder envBuilder = Protos.Environment
             .newBuilder()
@@ -337,7 +342,7 @@ public class ResourcePolicy {
                 Protos.Environment.Variable.newBuilder()
                     .setName("HADOOP_OPTS")
                     .setValue(
-                        StringUtils.join(" ", jvmOpts) +
+                        jvmOpts +
                             " -Xmx" + tasktrackerJVMHeap + "m" +
                             " -XX:NewSize=" + tasktrackerJVMHeap / 3 + "m -XX:MaxNewSize=" + (int)Math.floor
                             (tasktrackerJVMHeap * 0.6) + "m"
