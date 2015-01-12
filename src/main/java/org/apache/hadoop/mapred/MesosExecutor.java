@@ -231,12 +231,12 @@ public class MesosExecutor implements Executor {
           return;
         }
 
-        LOG.info("Checking to see if TaskTracker has no running tasks");
-        int runningTasks = taskTracker.runningTasks.size();
+        LOG.info("Checking to see if TaskTracker has no running jobs");
+        int runningJobs = taskTracker.runningJobs.size();
 
         // Check to see if the number of running jobs on the task tracker is zero
-        if (runningTasks == 0) {
-          LOG.warn("TaskTracker has zero tasks running, terminating");
+        if (runningJobs == 0) {
+          LOG.warn("TaskTracker has zero jobs running, terminating");
 
           try {
             taskTracker.shutdown();
@@ -247,7 +247,7 @@ public class MesosExecutor implements Executor {
           }
         }
         else {
-          LOG.info("TaskTracker has " + runningTasks + " jobs running");
+          LOG.info("TaskTracker has " + runningJobs + " jobs running");
           scheduleSuicideTimer();
         }
       }
