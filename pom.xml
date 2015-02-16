@@ -33,11 +33,6 @@
           <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
         </repository>
         <repository>
-            <id>mesosphere-public-repo</id>
-            <name>Mesosphere Public Repo</name>
-            <url>http://downloads.mesosphere.io/maven</url>
-        </repository>
-        <repository>
             <id>clojars.org</id>
             <url>http://clojars.org/repo</url>
         </repository>
