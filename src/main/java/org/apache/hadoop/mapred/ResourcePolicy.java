@@ -476,7 +476,7 @@ public class ResourcePolicy {
                     .setName("mem")
                     .setType(Value.Type.SCALAR)
                     .setRole(memRole)
-                    .setScalar(Value.Scalar.newBuilder().setValue(taskMem)))
+                    .setScalar(Value.Scalar.newBuilder().setValue(containerMem)))
             .addResources(
                 Resource
                     .newBuilder()
@@ -527,6 +527,13 @@ public class ResourcePolicy {
                     .setType(Value.Type.SCALAR)
                     .setRole(cpuRole)
                     .setScalar(Value.Scalar.newBuilder().setValue(taskCpus - containerCpus)))
+            .addResources(
+                Resource
+                    .newBuilder()
+                    .setName("mem")
+                    .setType(Value.Type.SCALAR)
+                    .setRole(memRole)
+                    .setScalar(Value.Scalar.newBuilder().setValue(taskMem - containerCpus)))
             .setData(taskData)
             .setExecutor(executor)
             .build();
