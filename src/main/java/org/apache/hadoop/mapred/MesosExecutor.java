@@ -222,7 +222,7 @@ public class MesosExecutor implements Executor {
     taskTracker.setMaxReduceSlots(maxReduceSlots);
 
     // If we have zero slots left, commit suicide when no jobs are running
-    if (maxMapSlots + maxReduceSlots == 0) {
+    if ((maxMapSlots + maxReduceSlots) == 0) {
       scheduleSuicideTimer();
     }
   }
