@@ -195,7 +195,9 @@ public class MesosExecutor implements Executor {
         launcherField.setAccessible(true);
 
         // Kill the current map task launcher
-        ((TaskTracker.TaskLauncher) launcherField.get(taskTracker)).interrupt();
+        TaskTracker.TaskLauncher launcher = ((TaskTracker.TaskLauncher) launcherField.get(taskTracker));
+        launcher.notifySlots();
+        launcher.interrupt();
       } catch (ReflectiveOperationException e) {
         LOG.fatal("Failed updating map slots due to error with reflection", e);
       }
@@ -207,7 +209,9 @@ public class MesosExecutor implements Executor {
         launcherField.setAccessible(true);
 
         // Kill the current reduce task launcher
-        ((TaskTracker.TaskLauncher) launcherField.get(taskTracker)).interrupt();
+        TaskTracker.TaskLauncher launcher = ((TaskTracker.TaskLauncher) launcherField.get(taskTracker));
+        launcher.notifySlots();
+        launcher.interrupt();
       } catch (ReflectiveOperationException e) {
         LOG.fatal("Failed updating reduce slots due to error with reflection", e);
       }
