@@ -14,6 +14,7 @@ import java.io.*;
 import java.lang.reflect.Field;
 import java.lang.ReflectiveOperationException;
 
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -235,12 +236,12 @@ public class MesosExecutor implements Executor {
           return;
         }
 
-        LOG.info("Checking to see if TaskTracker has no running jobs");
-        int runningJobs = taskTracker.runningJobs.size();
+        LOG.info("Checking to see if TaskTracker is idle");
 
-        // Check to see if the number of running jobs on the task tracker is zero
-        if (runningJobs == 0) {
-          LOG.warn("TaskTracker has zero jobs running, terminating");
+        // If the task tracker is idle, all tasks have finished and task output
+        // has been cleaned up.
+        if (taskTracker.isIdle()) {
+          LOG.warn("TaskTracker is idle, terminating");
 
           try {
             taskTracker.shutdown();
@@ -251,7 +252,17 @@ public class MesosExecutor implements Executor {
           }
         }
         else {
-          LOG.info("TaskTracker has " + runningJobs + " jobs running");
+          try {
+            Field field = taskTracker.getClass().getDeclaredField("tasksToCleanup");
+            field.setAccessible(true);
+            BlockingQueue<TaskTrackerAction> tasksToCleanup = ((BlockingQueue<TaskTrackerAction>) field.get(taskTracker));
+            LOG.info("TaskTracker has " + taskTracker.tasks.size() +
+                     " running tasks and " + tasksToCleanup +
+                     " tasks to clean up.");
+          } catch (ReflectiveOperationException e) {
+            LOG.fatal("Failed to get task counts from TaskTracker", e);
+          }
+
           scheduleSuicideTimer();
         }
       }
