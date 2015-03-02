@@ -383,16 +383,22 @@ public class ResourcePolicy {
         }
 
         String uri = scheduler.conf.get("mapred.mesos.executor.uri");
-        if (uri == null) {
+        String directory = scheduler.conf.get("mapred.mesos.executor.directory");
+        boolean isUriSet = uri != null && !uri.equals("");
+        boolean isDirectorySet = directory != null && !directory.equals("");
+
+        if (!isUriSet && !isDirectorySet) {
           throw new RuntimeException(
               "Expecting configuration property 'mapred.mesos.executor'");
-        }
-
-        String directory = scheduler.conf.get("mapred.mesos.executor.directory");
-        if (directory == null || directory.equals("")) {
+        } else if (isUriSet && isDirectorySet) {
+          throw new RuntimeException(
+              "Conflicting properties 'mapred.mesos.executor.uri' and 'mapred.mesos.executor.directory', only one can be set");
+        } else if (!isDirectorySet) {
           LOG.info("URI: " + uri + ", name: " + new File(uri).getName());
 
           directory = new File(uri).getName().split("\\.")[0] + "*";
+        } else if (!isUriSet) {
+	    LOG.info("mapred.mesos.executor.uri is not set, relying on configured 'mapred.mesos.executor.directory' for working Hadoop distribution");
         }
 
         String command = scheduler.conf.get("mapred.mesos.executor.command");
@@ -403,8 +409,10 @@ public class ResourcePolicy {
         CommandInfo.Builder commandInfo = CommandInfo.newBuilder();
         commandInfo
             .setEnvironment(envBuilder)
-            .setValue(String.format("cd %s && %s", directory, command))
-            .addUris(CommandInfo.URI.newBuilder().setValue(uri));
+            .setValue(String.format("cd %s && %s", directory, command));
+        if (uri != null) {
+            commandInfo.addUris(CommandInfo.URI.newBuilder().setValue(uri));
+        }
 
         // Populate ContainerInfo if needed
         String containerImage = scheduler.conf.get("mapred.mesos.container.image");
