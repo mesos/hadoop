@@ -51,7 +51,7 @@ public class MesosExecutor implements Executor {
 
     // Set the mapred.local directory inside the executor sandbox, so that
     // different TaskTrackers on the same host do not step on each other.
-    conf.set("mapred.local.dir", System.getProperty("user.dir") + "/mapred");
+    conf.set("mapred.local.dir", System.getenv("MESOS_DIRECTORY") + "/mapred");
 
     return conf;
   }
