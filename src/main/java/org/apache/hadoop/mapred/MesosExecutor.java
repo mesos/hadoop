@@ -11,10 +11,20 @@ import org.apache.mesos.Protos.TaskStatus;
 
 import java.io.*;
 
+import java.lang.reflect.Field;
+import java.lang.ReflectiveOperationException;
+
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
 public class MesosExecutor implements Executor {
   public static final Log LOG = LogFactory.getLog(MesosExecutor.class);
   private SlaveInfo slaveInfo;
   private TaskTracker taskTracker;
+
+  protected final ScheduledExecutorService timerScheduler =
+       Executors.newScheduledThreadPool(1);
 
   public static void main(String[] args) {
     MesosExecutorDriver driver = new MesosExecutorDriver(new MesosExecutor());
@@ -37,10 +47,8 @@ public class MesosExecutor implements Executor {
       conf.writeXml(writer);
       writer.flush();
       String xml = writer.getBuffer().toString();
-      String xmlFormatted =
-          org.apache.mesos.hadoop.Utils.formatXml(xml);
       LOG.info("XML Configuration received:\n" +
-          xmlFormatted);
+               org.apache.mesos.hadoop.Utils.formatXml(xml));
     } catch (Exception e) {
       LOG.warn("Failed to output configuration as XML.", e);
     }
@@ -123,14 +131,16 @@ public class MesosExecutor implements Executor {
   }
 
   @Override
-  public void killTask(ExecutorDriver driver, TaskID taskId) {
+  public void killTask(final ExecutorDriver driver, final TaskID taskId) {
     LOG.info("Killing task : " + taskId.getValue());
-    try {
-      taskTracker.shutdown();
-    } catch (IOException e) {
-      LOG.error("Failed to shutdown TaskTracker", e);
-    } catch (InterruptedException e) {
-      LOG.error("Failed to shutdown TaskTracker", e);
+    if (taskTracker != null) {
+        LOG.info("Revoking task tracker map/reduce slots");
+        revokeSlots();
+
+        driver.sendStatusUpdate(TaskStatus.newBuilder()
+            .setTaskId(taskId)
+            .setState(TaskState.TASK_FINISHED)
+            .build());
     }
   }
 
@@ -158,5 +168,86 @@ public class MesosExecutor implements Executor {
   @Override
   public void shutdown(ExecutorDriver d) {
     LOG.info("Executor asked to shutdown");
+  }
+
+  public void revokeSlots() {
+    if (taskTracker == null) {
+      LOG.error("Task tracker is not initialized");
+      return;
+    }
+
+    int mapSlotsToRevoke = taskTracker.getJobConf().getInt("mapred.tasktracker.map.tasks.revoke", 0);
+    int reduceSlotsToRevoke = taskTracker.getJobConf().getInt("mapred.tasktracker.reduce.tasks.revoke", 0);
+
+    int maxMapSlots = taskTracker.getMaxCurrentMapTasks() - mapSlotsToRevoke;
+    int maxReduceSlots = taskTracker.getMaxCurrentReduceTasks() - reduceSlotsToRevoke;
+
+    // TODO(tarnfeld): Sanity check that it's safe for us to change the slots.
+    // Be sure there's nothing running and nothing in the launcher queue.
+
+    // If we expect to have no slots, let's go ahead and terminate the task launchers
+    if (maxMapSlots == 0) {
+      try {
+        Field launcherField = taskTracker.getClass().getDeclaredField("mapLauncher");
+        launcherField.setAccessible(true);
+
+        // Kill the current map task launcher
+        ((TaskTracker.TaskLauncher) launcherField.get(taskTracker)).interrupt();
+      } catch (ReflectiveOperationException e) {
+        LOG.fatal("Failed updating map slots due to error with reflection", e);
+      }
+    }
+
+    if (maxReduceSlots == 0) {
+      try {
+        Field launcherField = taskTracker.getClass().getDeclaredField("reduceLauncher");
+        launcherField.setAccessible(true);
+
+        // Kill the current reduce task launcher
+        ((TaskTracker.TaskLauncher) launcherField.get(taskTracker)).interrupt();
+      } catch (ReflectiveOperationException e) {
+        LOG.fatal("Failed updating reduce slots due to error with reflection", e);
+      }
+    }
+
+    // Configure the new slot counts on the task tracker
+    taskTracker.setMaxMapSlots(maxMapSlots);
+    taskTracker.setMaxReduceSlots(maxReduceSlots);
+
+    // If we have zero slots left, commit suicide when no jobs are running
+    if (maxMapSlots + maxReduceSlots == 0) {
+      scheduleSuicideTimer();
+    }
+  }
+
+  protected void scheduleSuicideTimer() {
+    timerScheduler.schedule(new Runnable() {
+      @Override
+      public void run() {
+        if (taskTracker == null) {
+          return;
+        }
+
+        LOG.info("Checking to see if TaskTracker has no running jobs");
+        int runningJobs = taskTracker.runningJobs.size();
+
+        // Check to see if the number of running jobs on the task tracker is zero
+        if (runningJobs == 0) {
+          LOG.warn("TaskTracker has zero jobs running, terminating");
+
+          try {
+            taskTracker.shutdown();
+          } catch (IOException e) {
+            LOG.error("Failed to shutdown TaskTracker", e);
+          } catch (InterruptedException e) {
+            LOG.error("Failed to shutdown TaskTracker", e);
+          }
+        }
+        else {
+          LOG.info("TaskTracker has " + runningJobs + " jobs running");
+          scheduleSuicideTimer();
+        }
+      }
+    }, 1000, TimeUnit.MILLISECONDS);
   }
 }

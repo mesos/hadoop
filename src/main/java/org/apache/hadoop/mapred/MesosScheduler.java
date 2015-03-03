@@ -45,6 +45,9 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   // giving up.
   public static final long LAUNCH_TIMEOUT_MS = 300000; // 5 minutes
   public static final long PERIODIC_MS = 300000; // 5 minutes
+  public static final long DEFAULT_IDLE_CHECK_INTERVAL = 5; // 5 seconds
+  // Destroy task trackers after being idle for N idle checks
+  public static final long DEFAULT_IDLE_REVOCATION_CHECKS = 5;
   private SchedulerDriver driver;
 
   protected TaskScheduler taskScheduler;
