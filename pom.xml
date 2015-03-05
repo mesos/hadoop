@@ -4,7 +4,7 @@
 
     <groupId>org.apache.mesos</groupId>
     <artifactId>hadoop-mesos</artifactId>
-    <version>0.0.8</version>
+    <version>0.0.9</version>
 
     <properties>
         <encoding>UTF-8</encoding>
