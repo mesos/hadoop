@@ -5,7 +5,7 @@ Hadoop on Mesos
 
 #### Overview ####
 
-To run _Hadoop on Mesos_ you need to add the `hadoop-mesos-0.1.0.jar`
+To run _Hadoop on Mesos_ you need to add the `hadoop-mesos-0.1.1.jar`
 library to your Hadoop distribution (any distribution that uses protobuf > 2.5.0)
 and set some new configuration properties. Read on for details.
 
@@ -23,13 +23,13 @@ install `libsnappy`.  The [`snappy-java`][snappy-java] package also includes a b
 
 #### Build ####
 
-You can build `hadoop-mesos-0.1.0.jar` using Maven:
+You can build `hadoop-mesos-0.1.1.jar` using Maven:
 
 ```shell
 mvn package
 ```
 
-If successful, the JAR will be at `target/hadoop-mesos-0.1.0.jar`.
+If successful, the JAR will be at `target/hadoop-mesos-0.1.1.jar`.
 
 > NOTE: If you want to build against a different version of Mesos than
 > the default you'll need to update `mesos-version` in `pom.xml`.
@@ -51,10 +51,10 @@ tar zxf hadoop-2.5.0-cdh5.2.0.tar.gz
 
 > **Take note**, the extracted directory is `hadoop-2.5.0-cdh5.2.0`.
 
-Now copy `hadoop-mesos-0.1.0.jar` into the `share/hadoop/common/lib` folder.
+Now copy `hadoop-mesos-0.1.1.jar` into the `share/hadoop/common/lib` folder.
 
 ```shell
-cp /path/to/hadoop-mesos-0.1.0.jar hadoop-2.5.0-cdh5.2.0/share/hadoop/common/lib/
+cp /path/to/hadoop-mesos-0.1.1.jar hadoop-2.5.0-cdh5.2.0/share/hadoop/common/lib/
 ```
 
 Since CDH5 includes both MRv1 and MRv2 (YARN) and is configured for YARN by
