@@ -1,6 +1,5 @@
 package org.apache.hadoop.mapred;
 
-import com.google.protobuf.ByteString;
 import org.apache.commons.httpclient.HttpHost;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -11,6 +10,7 @@ import org.apache.mesos.Protos;
 import org.apache.mesos.Protos.*;
 import org.apache.mesos.Protos.TaskID;
 import org.apache.mesos.SchedulerDriver;
+import com.google.protobuf.ByteString;
 
 import java.io.*;
 import java.util.*;
@@ -64,11 +64,11 @@ public class ResourcePolicy {
         (MesosScheduler.JVM_MEM_OVERHEAD_PERCENT_DEFAULT + 1));
 
     containerCpus = scheduler.conf.getFloat("mapred.mesos.tasktracker.cpus",
-        (float) MesosScheduler.TASKTRACKER_CPUS);
+        (float) MesosScheduler.TASKTRACKER_CPUS_DEFAULT);
+    containerDisk = scheduler.conf.getInt("mapred.mesos.tasktracker.disk",
+        MesosScheduler.TASKTRACKER_DISK_DEFAULT);
 
     containerMem = tasktrackerMem;
-    containerDisk = 0;
-
   }
 
   public void computeNeededSlots(List<JobInProgress> jobsInProgress,
@@ -78,6 +78,7 @@ public class ResourcePolicy {
     int pendingReduces = 0;
     int runningMaps = 0;
     int runningReduces = 0;
+
     for (JobInProgress progress : jobsInProgress) {
       // JobStatus.pendingMaps/Reduces may return the wrong value on
       // occasion.  This seems to be safer.
@@ -85,6 +86,12 @@ public class ResourcePolicy {
       pendingReduces += scheduler.getPendingTasks(progress.getTasks(TaskType.REDUCE));
       runningMaps += progress.runningMaps();
       runningReduces += progress.runningReduces();
+
+      // If the task is waiting to launch the cleanup task, let us make sure we have
+      // capacity to run the task.
+      if (!progress.isCleanupLaunched()) {
+        pendingMaps += scheduler.getPendingTasks(progress.getTasks(TaskType.JOB_CLEANUP));
+      }
     }
 
     // Mark active (heartbeated) TaskTrackers and compute idle slots.
@@ -323,10 +330,6 @@ public class ResourcePolicy {
         LOG.info("Launching task " + taskId.getValue() + " on "
             + httpAddress.toString() + " with mapSlots=" + mapSlots + " reduceSlots=" + reduceSlots);
 
-        // Add this tracker to Mesos tasks.
-        scheduler.mesosTrackers.put(httpAddress, new MesosTracker(httpAddress, taskId,
-            mapSlots, reduceSlots, scheduler));
-
         List<String> defaultJvmOpts = Arrays.asList(
             "-XX:+UseConcMarkSweepGC",
             "-XX:+CMSParallelRemarkEnabled",
@@ -450,50 +453,58 @@ public class ResourcePolicy {
         overrides.set("mapred.task.tracker.report.address",
             reportAddress.getHostName() + ':' + reportAddress.getPort());
 
-        overrides.setLong("mapred.tasktracker.map.tasks.maximum",
-            mapSlots);
+        overrides.setLong("mapred.tasktracker.map.tasks.maximum", mapSlots);
+        overrides.setLong("mapred.tasktracker.reduce.tasks.maximum", reduceSlots);
 
-        overrides.setLong("mapred.tasktracker.reduce.tasks.maximum",
-            reduceSlots);
-
-
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try {
-          overrides.write(new DataOutputStream(baos));
-          baos.flush();
-        } catch (IOException e) {
-          LOG.warn("Failed to serialize configuration.", e);
-          System.exit(1);
-        }
-
-        byte[] bytes = baos.toByteArray();
-
-        TaskInfo info = TaskInfo
+        // Build up the executor info
+        ExecutorInfo executor = ExecutorInfo
             .newBuilder()
-            .setName(taskId.getValue())
-            .setTaskId(taskId)
-            .setSlaveId(offer.getSlaveId())
+            .setExecutorId(ExecutorID.newBuilder().setValue(
+                "executor_" + taskId.getValue()))
+            .setName("Hadoop TaskTracker")
+            .setSource(taskId.getValue())
             .addResources(
                 Resource
                     .newBuilder()
                     .setName("cpus")
                     .setType(Value.Type.SCALAR)
                     .setRole(cpuRole)
-                    .setScalar(Value.Scalar.newBuilder().setValue(taskCpus - containerCpus)))
+                    .setScalar(Value.Scalar.newBuilder().setValue(containerCpus)))
             .addResources(
                 Resource
                     .newBuilder()
                     .setName("mem")
                     .setType(Value.Type.SCALAR)
                     .setRole(memRole)
-                    .setScalar(Value.Scalar.newBuilder().setValue(taskMem - containerMem)))
+                    .setScalar(Value.Scalar.newBuilder().setValue(containerMem)))
             .addResources(
                 Resource
                     .newBuilder()
                     .setName("disk")
                     .setType(Value.Type.SCALAR)
                     .setRole(diskRole)
-                    .setScalar(Value.Scalar.newBuilder().setValue(taskDisk - containerDisk)))
+                    .setScalar(Value.Scalar.newBuilder().setValue(containerDisk)))
+            .setCommand(commandInfo.build())
+            .build();
+
+        ByteString taskData;
+
+        try {
+          taskData = org.apache.mesos.hadoop.Utils.confToBytes(overrides);
+        } catch (IOException e) {
+          LOG.error("Caught exception serializing configuration");
+
+          // Skip this offer completely
+          schedulerDriver.declineOffer(offer.getId());
+          continue;
+        }
+
+        // Create the TaskTracker TaskInfo
+        TaskInfo trackerTaskInfo = TaskInfo
+            .newBuilder()
+            .setName(taskId.getValue())
+            .setTaskId(taskId)
+            .setSlaveId(offer.getSlaveId())
             .addResources(
                 Resource
                     .newBuilder()
@@ -509,33 +520,30 @@ public class ResourcePolicy {
                             .addRange(Value.Range.newBuilder()
                                 .setBegin(reportAddress.getPort())
                                 .setEnd(reportAddress.getPort()))))
-            .setExecutor(
-                ExecutorInfo
+            .addResources(
+                Resource
                     .newBuilder()
-                    .setExecutorId(ExecutorID.newBuilder().setValue(
-                        "executor_" + taskId.getValue()))
-                    .setName("Hadoop TaskTracker")
-                    .setSource(taskId.getValue())
-                    .addResources(
-                        Resource
-                            .newBuilder()
-                            .setName("cpus")
-                            .setType(Value.Type.SCALAR)
-                            .setRole(cpuRole)
-                            .setScalar(Value.Scalar.newBuilder().setValue(
-                                (containerCpus))))
-                    .addResources(
-                        Resource
-                            .newBuilder()
-                            .setName("mem")
-                            .setType(Value.Type.SCALAR)
-                            .setRole(memRole)
-                            .setScalar(Value.Scalar.newBuilder().setValue(containerMem)))
-                    .setCommand(commandInfo.build()))
-            .setData(ByteString.copyFrom(bytes))
+                    .setName("cpus")
+                    .setType(Value.Type.SCALAR)
+                    .setRole(cpuRole)
+                    .setScalar(Value.Scalar.newBuilder().setValue(taskCpus - containerCpus)))
+            .addResources(
+                Resource
+                    .newBuilder()
+                    .setName("mem")
+                    .setType(Value.Type.SCALAR)
+                    .setRole(memRole)
+                    .setScalar(Value.Scalar.newBuilder().setValue(taskMem - containerCpus)))
+            .setData(taskData)
+            .setExecutor(executor)
             .build();
 
-        schedulerDriver.launchTasks(Arrays.asList(offer.getId()), Arrays.asList(info));
+        // Add this tracker to Mesos tasks.
+        scheduler.mesosTrackers.put(httpAddress, new MesosTracker(httpAddress, taskId,
+            mapSlots, reduceSlots, scheduler));
+
+        // Launch the task
+        schedulerDriver.launchTasks(Arrays.asList(offer.getId()), Arrays.asList(trackerTaskInfo));
 
         neededMapSlots -= mapSlots;
         neededReduceSlots -= reduceSlots;

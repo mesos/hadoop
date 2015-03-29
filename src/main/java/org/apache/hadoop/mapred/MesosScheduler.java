@@ -36,8 +36,9 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   public static final double SLOT_CPUS_DEFAULT = 1; // 1 cores.
   public static final int SLOT_DISK_DEFAULT = 1024; // 1 GB.
   public static final int SLOT_JVM_HEAP_DEFAULT = 1024; // 1024MB.
-  public static final double TASKTRACKER_CPUS = 1.0; // 1 core.
+  public static final double TASKTRACKER_CPUS_DEFAULT = 1.0; // 1 core.
   public static final int TASKTRACKER_MEM_DEFAULT = 1024; // 1 GB.
+  public static final int TASKTRACKER_DISK_DEFAULT = 1024; // 1 GB.
   // The default behavior in Hadoop is to use 4 slots per TaskTracker:
   public static final int MAP_SLOTS_DEFAULT = 2;
   public static final int REDUCE_SLOTS_DEFAULT = 2;
@@ -45,6 +46,9 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   // giving up.
   public static final long LAUNCH_TIMEOUT_MS = 300000; // 5 minutes
   public static final long PERIODIC_MS = 300000; // 5 minutes
+  public static final long DEFAULT_IDLE_CHECK_INTERVAL = 5; // 5 seconds
+  // Destroy task trackers after being idle for N idle checks
+  public static final long DEFAULT_IDLE_REVOCATION_CHECKS = 5;
   private SchedulerDriver driver;
 
   protected TaskScheduler taskScheduler;
@@ -245,6 +249,19 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
       LOG.info("Unknown/exited TaskTracker: " + tracker + ". ");
       return null;
     }
+
+    MesosTracker mesosTracker = mesosTrackers.get(tracker);
+
+    // Make sure we're not asked to assign tasks to any task trackers that have
+    // been stopped. This could happen while the task tracker has not been
+    // removed from the cluster e.g still in the heartbeat timeout period.
+    synchronized (this) {
+      if (mesosTracker.stopped) {
+        LOG.info("Asked to assign tasks to stopped tracker " + tracker + ".");
+        return null;
+      }
+    }
+
     // Let the underlying task scheduler do the actual task scheduling.
     List<Task> tasks = taskScheduler.assignTasks(taskTracker);
 
@@ -255,7 +272,7 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
 
     // Keep track of which TaskTracker contains which tasks.
     for (Task task : tasks) {
-      mesosTrackers.get(tracker).jobs.add(task.getJobID());
+      mesosTracker.jobs.add(task.getJobID());
     }
 
     return tasks;

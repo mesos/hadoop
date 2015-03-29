@@ -161,6 +161,24 @@ default values.
     </description>
   </property>
 
+  <!-- TaskTracker Idle Slots Revocation -->
+  <property>
+    <name>mapred.mesos.tracker.idle.interval</name>
+    <value>5</value>
+    <description>
+      Internal (in seconds) to check for TaskTrackers that have idle
+      slots. Default is 5 seconds.
+    </description>
+  </property>
+  <property>
+    <name>mapred.mesos.tracker.idle.checks</name>
+    <value>5</value>
+    <description>
+      After this many successful idle checks (meaning all slots *are* idle) the
+      slots will be revoked from the TaskTracker.
+    </description>
+  </property>
+
   <!-- Metrics -->
   <property>
     <name>mapred.mesos.metrics.enabled</name>
