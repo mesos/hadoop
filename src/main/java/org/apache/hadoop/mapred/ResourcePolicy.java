@@ -82,15 +82,15 @@ public class ResourcePolicy {
     for (JobInProgress progress : jobsInProgress) {
       // JobStatus.pendingMaps/Reduces may return the wrong value on
       // occasion.  This seems to be safer.
-      pendingMaps += scheduler.getPendingTasks(progress.getTasks(TaskType.MAP));
-      pendingReduces += scheduler.getPendingTasks(progress.getTasks(TaskType.REDUCE));
+      pendingMaps += scheduler.getPendingTasks(progress.getTasks(TaskType.MAP), TaskType.MAP);
+      pendingReduces += scheduler.getPendingTasks(progress.getTasks(TaskType.REDUCE), TaskType.REDUCE);
       runningMaps += progress.runningMaps();
       runningReduces += progress.runningReduces();
 
       // If the task is waiting to launch the cleanup task, let us make sure we have
       // capacity to run the task.
       if (!progress.isCleanupLaunched()) {
-        pendingMaps += scheduler.getPendingTasks(progress.getTasks(TaskType.JOB_CLEANUP));
+        pendingMaps += scheduler.getPendingTasks(progress.getTasks(TaskType.JOB_CLEANUP), TaskType.JOB_CLEANUP);
       }
     }
 
