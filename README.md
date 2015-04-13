@@ -135,7 +135,7 @@ operation](http://hadoop.apache.org/docs/stable/single_node_setup.html#PseudoDis
 </property>
 ```
 
-[More details on configuration propertios can be found here.](configuration.md)
+[More details on configuration properties can be found here.](configuration.md)
 
 #### Start ####
 
