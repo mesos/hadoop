@@ -145,13 +145,13 @@ to the Mesos native library.
 On Linux:
 
 ```
-$ MESOS_NATIVE_LIBRARY=/path/to/libmesos.so hadoop jobtracker
+$ MESOS_NATIVE_JAVA_LIBRARY=/path/to/libmesos.so hadoop jobtracker
 ```
 
 And on OS X:
 
 ```
-$ MESOS_NATIVE_LIBRARY=/path/to/libmesos.dylib hadoop jobtracker
+$ MESOS_NATIVE_JAVA_LIBRARY=/path/to/libmesos.dylib hadoop jobtracker
 ```
 
 > **NOTE: You do not need to worry about distributing your Hadoop
