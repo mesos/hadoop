@@ -5,13 +5,20 @@ import org.apache.commons.httpclient.HttpHost;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.mapred.Pool;
+import org.apache.hadoop.mapred.PoolManager;
+import org.apache.hadoop.mapred.FairScheduler;
 import org.apache.hadoop.mapreduce.server.jobtracker.TaskTracker;
+import org.apache.hadoop.mapreduce.TaskType;
 import org.apache.mesos.MesosSchedulerDriver;
 import org.apache.mesos.Protos;
 import org.apache.mesos.Protos.*;
 import org.apache.mesos.Scheduler;
 import org.apache.mesos.SchedulerDriver;
 import org.apache.mesos.hadoop.Metrics;
+
+import java.lang.reflect.Field;
+import java.lang.ReflectiveOperationException;
 
 import java.io.File;
 import java.io.IOException;
@@ -331,32 +338,69 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     timerScheduler.schedule(command, delay, unit);
   }
 
-  // For some reason, pendingMaps() and pendingReduces() doesn't return the
-  // values we expect. We observed negative values, which may be related to
-  // https://issues.apache.org/jira/browse/MAPREDUCE-1238. Below is the
-  // algorithm that is used to calculate the pending tasks within the Hadoop
-  // JobTracker sources (see 'printTaskSummary' in
-  // src/org/apache/hadoop/mapred/jobdetails_jsp.java).
-  public int getPendingTasks(TaskInProgress[] tasks) {
-    int totalTasks = tasks.length;
-    int runningTasks = 0;
-    int finishedTasks = 0;
-    int killedTasks = 0;
+  public int getPendingTasks(TaskInProgress[] tasks, TaskType taskType) {
+
+    // Pull out the pool manager from the FairScheduler, if we are configured
+    // to use the fair scheduler. Not idea to do this using reflection but as
+    // far as I can tell, there's no easier way.
+    PoolManager poolMgr = null;
+    if (taskScheduler instanceof FairScheduler) {
+        Field field = FairScheduler.getDeclaredField("poolMgr");
+        field.setAccessible(true);
+
+        poolMgr = (PoolMgr) field.get(taskSchdeduler);
+    }
+
+    Map<String, MutablePair<Pool, Integer>> pools =
+            new HashMap<String, MutablePair<Pool, Integer>>();
+
     for (int i = 0; i < totalTasks; ++i) {
       TaskInProgress task = tasks[i];
       if (task == null) {
         continue;
       }
-      if (task.isComplete()) {
-        finishedTasks += 1;
-      } else if (task.isRunning()) {
-        runningTasks += 1;
-      } else if (task.wasKilled()) {
-        killedTasks += 1;
+
+      String poolName;
+      if (poolMgr != null) {
+          Pool pool = poolMgr.getPool(task.getJob());
+          if (pool != null) {
+              poolName = pool.getName();
+          }
       }
+
+      if (poolName == null) {
+          poolName = Pool.DEFAULT_POOL_NAME;
+      }
+
+      MutablePair<Pool, Integer> pair = pools.get(poolName);
+      Integer pendingTasks = pair.getRight();
+      if (pendingTasks == null) {
+          pendingTasks = 0;
+      }
+
+      pendingTasks++;
+
+      if (task.isComplete() || task.isRunning() || task.wasKilled()) {
+        pendingTasks -= 1;
+      }
+
+      pair.setRight(pendingTasks);
+      pools.put(poolName, pair);
     }
-    int pendingTasks = totalTasks - runningTasks - killedTasks - finishedTasks;
-    return pendingTasks;
+
+    // Calculate the total number of pending tasks, however, capping each pool
+    // at its' configured maximum.
+    int totalPendingTasks = 0;
+    for (Pair<Pool, Integer> pair : pools.values()) {
+        if ((taskType == TaskType.MAP || taskType == TaskType.REDUCE) && pair.getLeft()) {
+            int maxTasks = poolMgr.getMaxSlots(pair.getLeft().getName(), taskType);
+            totalPendingTasks += min(pair.getRight(), maxTasks);
+        } else {
+            totalPendingTasks += pair.getRight();
+        }
+    }
+
+    return totalPendingTasks;
   }
 
   // This method uses explicit synchronization in order to avoid deadlocks when
