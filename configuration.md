@@ -141,6 +141,36 @@ default values.
       role configured in "mapred.mesos.role".
     </description>
   </property>
+  <property>
+    <name>mapred.mesos.framework.name</name>
+    <value>hadoop</value>
+    <description>
+      This is the Mesos framework name.  Defaults to Hadoop plus port information.
+    </description>
+  </property>
+  <property>
+    <name>mapred.mesos.framework.principal</name>
+    <value>hadoop</value>
+    <description>
+      This is the Mesos framework principal. It is used for framework authentication.
+      Consult the Mesos documentation for details.
+    </description>
+  </property>
+  <property>
+    <name>mapred.mesos.framework.secretfile</name>
+    <value>/location/secretfile</value>
+    <description>
+      Location of the file holding the Mesos framework secret. It is used for framework authentication.
+      Consult the Mesos documentation for details.  Caution: avoid newline characters, some editor place these before end of file.
+    </description>
+  </property>
+  <property>
+    <name>mapred.mesos.framework.user</name>
+    <value>hadoop</value>
+    <description>
+      This is the user the Mesos framework runs as. If left unset, it defaults to the user running the scheduler.
+    </description>
+  </property>
 
   <!-- If you're using a custom Mesos Containerizer -->
   <property>
