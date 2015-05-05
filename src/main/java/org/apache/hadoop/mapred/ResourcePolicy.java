@@ -330,7 +330,7 @@ public class ResourcePolicy {
           tasks.add(taskInfo);
         }
 
-        if (mapSlots > 0) {
+        if (reduceSlots > 0) {
           TaskInfo taskInfo = buildTaskInfo(
             offer,
             reduceSlots,
