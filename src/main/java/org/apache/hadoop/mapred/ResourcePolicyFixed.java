@@ -1,18 +1,18 @@
 package org.apache.hadoop.mapred;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-
+/**
+ * @todo What is the difference between variable and fixed resource policy?
+ */
 public class ResourcePolicyFixed extends ResourcePolicy {
-
-  public static final Log LOG = LogFactory.getLog(ResourcePolicyFixed.class);
-
   public ResourcePolicyFixed(MesosScheduler scheduler) {
     super(scheduler);
   }
 
-  // This method computes the number of slots to launch for this offer, and
-  // returns true if the offer is sufficient.
+  /**
+   * Computes the number of slots to launch for this offer
+   *
+   * @return true if the offer is sufficient
+   */
   @Override
   public boolean computeSlots() {
     mapSlots = mapSlotsMax;
@@ -24,9 +24,6 @@ public class ResourcePolicyFixed extends ResourcePolicy {
     slots = (int) Math.min(slots, (disk - containerDisk) / slotDisk);
 
     // Is this offer too small for even the minimum slots?
-    if (slots < mapSlots + reduceSlots || slots < 1) {
-      return false;
-    }
-    return true;
+    return slots >= 1 && slots >= mapSlots + reduceSlots;
   }
 }

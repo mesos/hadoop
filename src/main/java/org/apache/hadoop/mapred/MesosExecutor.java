@@ -21,55 +21,34 @@ import java.util.concurrent.TimeUnit;
 
 public class MesosExecutor implements Executor {
   public static final Log LOG = LogFactory.getLog(MesosExecutor.class);
-  private SlaveInfo slaveInfo;
-  private TaskTracker taskTracker;
 
   protected final ScheduledExecutorService timerScheduler =
-       Executors.newScheduledThreadPool(1);
+      Executors.newScheduledThreadPool(1);
+  private SlaveInfo slaveInfo;
+  private TaskTracker taskTracker;
 
   public static void main(String[] args) {
     MesosExecutorDriver driver = new MesosExecutorDriver(new MesosExecutor());
     System.exit(driver.run() == Status.DRIVER_STOPPED ? 0 : 1);
   }
 
-  private JobConf configure(final TaskInfo task) {
-    JobConf conf = new JobConf(false);
-    try {
-      byte[] bytes = task.getData().toByteArray();
-      conf.readFields(new DataInputStream(new ByteArrayInputStream(bytes)));
-    } catch (IOException e) {
-      LOG.warn("Failed to deserialize configuration.", e);
-      System.exit(1);
-    }
-
-    // Output the configuration as XML for easy debugging.
-    try {
-      StringWriter writer = new StringWriter();
-      conf.writeXml(writer);
-      writer.flush();
-      String xml = writer.getBuffer().toString();
-      LOG.info("XML Configuration received:\n" +
-               org.apache.mesos.hadoop.Utils.formatXml(xml));
-    } catch (Exception e) {
-      LOG.warn("Failed to output configuration as XML.", e);
-    }
-
-    // Get hostname from Mesos to make sure we match what it reports
-    // to the JobTracker.
-    conf.set("slave.host.name", slaveInfo.getHostname());
-
-    // Set the mapred.local directory inside the executor sandbox, so that
-    // different TaskTrackers on the same host do not step on each other.
-    conf.set("mapred.local.dir", System.getenv("MESOS_DIRECTORY") + "/mapred");
-
-    return conf;
-  }
+// --------------------- Interface Executor ---------------------
 
   @Override
   public void registered(ExecutorDriver driver, ExecutorInfo executorInfo,
                          FrameworkInfo frameworkInfo, SlaveInfo slaveInfo) {
     LOG.info("Executor registered with the slave");
     this.slaveInfo = slaveInfo;
+  }
+
+  @Override
+  public void reregistered(ExecutorDriver driver, SlaveInfo slaveInfo) {
+    LOG.info("Executor reregistered with the slave");
+  }
+
+  @Override
+  public void disconnected(ExecutorDriver driver) {
+    LOG.info("Executor disconnected from the slave");
   }
 
   @Override
@@ -86,10 +65,7 @@ public class MesosExecutor implements Executor {
 
     try {
       taskTracker = new TaskTracker(conf);
-    } catch (IOException e) {
-      LOG.fatal("Failed to start TaskTracker", e);
-      System.exit(1);
-    } catch (InterruptedException e) {
+    } catch (IOException | InterruptedException e) {
       LOG.fatal("Failed to start TaskTracker", e);
       System.exit(1);
     }
@@ -119,7 +95,7 @@ public class MesosExecutor implements Executor {
           // Stop the executor.
           driver.stop();
         } catch (Throwable t) {
-          LOG.error("Caught exception, committing suicide.", t);
+          LOG.fatal("Caught exception, committing suicide.", t);
           driver.stop();
           System.exit(1);
         }
@@ -143,22 +119,12 @@ public class MesosExecutor implements Executor {
         @Override
         public void run() {
           driver.sendStatusUpdate(TaskStatus.newBuilder()
-            .setTaskId(taskId)
-            .setState(TaskState.TASK_FINISHED)
-            .build());
+              .setTaskId(taskId)
+              .setState(TaskState.TASK_FINISHED)
+              .build());
         }
       }.start();
     }
-  }
-
-  @Override
-  public void reregistered(ExecutorDriver driver, SlaveInfo slaveInfo) {
-    LOG.info("Executor reregistered with the slave");
-  }
-
-  @Override
-  public void disconnected(ExecutorDriver driver) {
-    LOG.info("Executor disconnected from the slave");
   }
 
   @Override
@@ -168,13 +134,46 @@ public class MesosExecutor implements Executor {
   }
 
   @Override
+  public void shutdown(ExecutorDriver d) {
+    LOG.info("Executor asked to shutdown");
+  }
+
+  @Override
   public void error(ExecutorDriver d, String message) {
     LOG.error("MesosExecutor.error: " + message);
   }
 
-  @Override
-  public void shutdown(ExecutorDriver d) {
-    LOG.info("Executor asked to shutdown");
+  private JobConf configure(final TaskInfo task) {
+    JobConf conf = new JobConf(false);
+    try {
+      byte[] bytes = task.getData().toByteArray();
+      conf.readFields(new DataInputStream(new ByteArrayInputStream(bytes)));
+    } catch (IOException e) {
+      LOG.warn("Failed to deserialize configuration.", e);
+      System.exit(1);
+    }
+
+    // Output the configuration as XML for easy debugging.
+    try {
+      StringWriter writer = new StringWriter();
+      conf.writeXml(writer);
+      writer.flush();
+      String xml = writer.getBuffer().toString();
+      LOG.info("XML Configuration received:\n" +
+          org.apache.mesos.hadoop.Utils.formatXml(xml));
+    } catch (Exception e) {
+      LOG.warn("Failed to output configuration as XML.", e);
+    }
+
+    // Get hostname from Mesos to make sure we match what it reports
+    // to the JobTracker.
+    conf.set("slave.host.name", slaveInfo.getHostname());
+
+    // Set the mapred.local directory inside the executor sandbox, so that
+    // different TaskTrackers on the same host do not step on each other.
+    conf.set("mapred.local.dir", System.getenv("MESOS_DIRECTORY") + "/mapred");
+
+    return conf;
   }
 
   public void revokeSlots() {
@@ -190,6 +189,7 @@ public class MesosExecutor implements Executor {
     // Be sure there's nothing running and nothing in the launcher queue.
 
     // If we expect to have no slots, let's go ahead and terminate the task launchers
+    // CONDITION IS ALWAYS TRUE
     if (maxMapSlots == 0) {
       try {
         Field launcherField = taskTracker.getClass().getDeclaredField("mapLauncher");
@@ -204,6 +204,7 @@ public class MesosExecutor implements Executor {
       }
     }
 
+    // CONDITION IS ALWAYS TRUE
     if (maxReduceSlots == 0) {
       try {
         Field launcherField = taskTracker.getClass().getDeclaredField("reduceLauncher");
@@ -245,20 +246,17 @@ public class MesosExecutor implements Executor {
 
           try {
             taskTracker.shutdown();
-          } catch (IOException e) {
-            LOG.error("Failed to shutdown TaskTracker", e);
-          } catch (InterruptedException e) {
+          } catch (IOException | InterruptedException e) {
             LOG.error("Failed to shutdown TaskTracker", e);
           }
-        }
-        else {
+        } else {
           try {
             Field field = taskTracker.getClass().getDeclaredField("tasksToCleanup");
             field.setAccessible(true);
             BlockingQueue<TaskTrackerAction> tasksToCleanup = ((BlockingQueue<TaskTrackerAction>) field.get(taskTracker));
             LOG.info("TaskTracker has " + taskTracker.tasks.size() +
-                     " running tasks and " + tasksToCleanup +
-                     " tasks to clean up.");
+                " running tasks and " + tasksToCleanup +
+                " tasks to clean up.");
           } catch (ReflectiveOperationException e) {
             LOG.fatal("Failed to get task counts from TaskTracker", e);
           }

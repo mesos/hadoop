@@ -16,7 +16,6 @@ import java.util.concurrent.TimeUnit;
  * Used to track the our launched TaskTrackers.
  */
 public class MesosTracker {
-
   public static final Log LOG = LogFactory.getLog(MesosScheduler.class);
   public volatile HttpHost host;
   public TaskID taskId;
@@ -91,6 +90,30 @@ public class MesosTracker {
     }, MesosScheduler.LAUNCH_TIMEOUT_MS, TimeUnit.MILLISECONDS);
   }
 
+  protected void schedulePeriodic() {
+    scheduler.scheduleTimer(new Runnable() {
+      @Override
+      public void run() {
+        if (MesosTracker.this.scheduler.mesosTrackers.containsKey(host) &&
+            MesosTracker.this == MesosTracker.this.scheduler.mesosTrackers.get(host)) {
+          // Periodically check if the jobs assigned to this TaskTracker are
+          // still running (lazy GC).
+          final Set<JobID> jobsCopy = new HashSet<>(MesosTracker.this.jobs);
+          for (JobID id : jobsCopy) {
+            JobStatus jobStatus = MesosTracker.this.scheduler.jobTracker.getJobStatus(id);
+            if (jobStatus == null || jobStatus.isJobComplete()) {
+              if (MesosTracker.this.scheduler.metrics != null) {
+                MesosTracker.this.scheduler.metrics.periodicGC.mark();
+              }
+              MesosTracker.this.jobs.remove(id);
+            }
+          }
+          schedulePeriodic();
+        }
+      }
+    }, MesosScheduler.PERIODIC_MS, TimeUnit.MILLISECONDS);
+  }
+
   protected void scheduleIdleCheck() {
     scheduler.scheduleTimer(new Runnable() {
       @Override
@@ -107,7 +130,7 @@ public class MesosTracker {
           return;
         }
 
-        boolean trackerIsIdle = false;
+        boolean trackerIsIdle;
 
         // We're only interested in TaskTrackers which have jobs assigned to them
         // but are completely idle. The MesosScheduler is in charge of destroying
@@ -148,30 +171,6 @@ public class MesosTracker {
         scheduleIdleCheck();
       }
     }, MesosTracker.this.idleCheckInterval, TimeUnit.SECONDS);
-  }
-
-  protected void schedulePeriodic() {
-    scheduler.scheduleTimer(new Runnable() {
-      @Override
-      public void run() {
-        if (MesosTracker.this.scheduler.mesosTrackers.containsKey(host) &&
-            MesosTracker.this == MesosTracker.this.scheduler.mesosTrackers.get(host)) {
-          // Periodically check if the jobs assigned to this TaskTracker are
-          // still running (lazy GC).
-          final Set<JobID> jobsCopy = new HashSet<JobID>(MesosTracker.this.jobs);
-          for (JobID id : jobsCopy) {
-            JobStatus jobStatus = MesosTracker.this.scheduler.jobTracker.getJobStatus(id);
-            if (jobStatus == null || jobStatus.isJobComplete()) {
-              if (MesosTracker.this.scheduler.metrics != null) {
-                MesosTracker.this.scheduler.metrics.periodicGC.mark();
-              }
-              MesosTracker.this.jobs.remove(id);
-            }
-          }
-          schedulePeriodic();
-        }
-      }
-    }, MesosScheduler.PERIODIC_MS, TimeUnit.MILLISECONDS);
   }
 
   public void stop() {
