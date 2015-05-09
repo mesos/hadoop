@@ -112,7 +112,21 @@ public class MesosExecutor implements Executor {
     LOG.info("Killing task : " + taskId.getValue());
     if (taskTracker != null) {
       LOG.info("Revoking task tracker map/reduce slots");
-      revokeSlots();
+
+      // terminate the task launchers
+      try {
+        killLauncher(taskTracker, "mapLauncher");
+        killLauncher(taskTracker, "reduceLauncher");
+      } catch (ReflectiveOperationException e) {
+        LOG.fatal("Failed updating map slots due to error with reflection", e);
+      }
+
+      // Configure the new slot counts on the task tracker
+      taskTracker.setMaxMapSlots(0);
+      taskTracker.setMaxReduceSlots(0);
+
+      // commit suicide when no jobs are running
+      scheduleSuicideTimer();
 
       // Send the TASK_FINISHED status
       new Thread("TaskFinishedUpdate") {
@@ -176,57 +190,21 @@ public class MesosExecutor implements Executor {
     return conf;
   }
 
-  public void revokeSlots() {
-    if (taskTracker == null) {
-      LOG.error("Task tracker is not initialized");
-      return;
-    }
+  /**
+   * This is a hack to over
+   * @param tracker
+   * @param name
+   * @throws NoSuchFieldException
+   * @throws IllegalAccessException
+   */
+  private void killLauncher(TaskTracker tracker, String name) throws NoSuchFieldException, IllegalAccessException {
+    Field f = tracker.getClass().getDeclaredField(name);
+    f.setAccessible(true);
 
-    int maxMapSlots = 0;
-    int maxReduceSlots = 0;
-
-    // TODO(tarnfeld): Sanity check that it's safe for us to change the slots.
-    // Be sure there's nothing running and nothing in the launcher queue.
-
-    // If we expect to have no slots, let's go ahead and terminate the task launchers
-    // CONDITION IS ALWAYS TRUE
-    if (maxMapSlots == 0) {
-      try {
-        Field launcherField = taskTracker.getClass().getDeclaredField("mapLauncher");
-        launcherField.setAccessible(true);
-
-        // Kill the current map task launcher
-        TaskTracker.TaskLauncher launcher = ((TaskTracker.TaskLauncher) launcherField.get(taskTracker));
-        launcher.notifySlots();
-        launcher.interrupt();
-      } catch (ReflectiveOperationException e) {
-        LOG.fatal("Failed updating map slots due to error with reflection", e);
-      }
-    }
-
-    // CONDITION IS ALWAYS TRUE
-    if (maxReduceSlots == 0) {
-      try {
-        Field launcherField = taskTracker.getClass().getDeclaredField("reduceLauncher");
-        launcherField.setAccessible(true);
-
-        // Kill the current reduce task launcher
-        TaskTracker.TaskLauncher launcher = ((TaskTracker.TaskLauncher) launcherField.get(taskTracker));
-        launcher.notifySlots();
-        launcher.interrupt();
-      } catch (ReflectiveOperationException e) {
-        LOG.fatal("Failed updating reduce slots due to error with reflection", e);
-      }
-    }
-
-    // Configure the new slot counts on the task tracker
-    taskTracker.setMaxMapSlots(maxMapSlots);
-    taskTracker.setMaxReduceSlots(maxReduceSlots);
-
-    // If we have zero slots left, commit suicide when no jobs are running
-    if ((maxMapSlots + maxReduceSlots) == 0) {
-      scheduleSuicideTimer();
-    }
+    // Kill the current map task launcher
+    TaskTracker.TaskLauncher launcher = ((TaskTracker.TaskLauncher) f.get(tracker));
+    launcher.notifySlots();
+    launcher.interrupt();
   }
 
   protected void scheduleSuicideTimer() {
