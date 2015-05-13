@@ -120,8 +120,11 @@ public class ResourcePolicy {
     int inactiveReduceSlots = 0;
     for (MesosTracker tracker : scheduler.mesosTrackers.values()) {
       if (!tracker.active) {
-        inactiveMapSlots += tracker.mapSlots;
-        inactiveReduceSlots += tracker.reduceSlots;
+        if (tracker.slotType == TaskType.MAP) {
+          inactiveMapSlots += tracker.slots;
+        } else {
+          inactiveReduceSlots += tracker.slots;
+        }
       }
     }
 
@@ -225,9 +228,14 @@ public class ResourcePolicy {
         neededMapSlots = Math.max(0, neededMapSlots);
         neededReduceSlots = Math.max(0, neededReduceSlots);
 
+        // Figure out how many ports we actually need from the resources set
+        int neededPorts = (neededMapSlots > 0 && neededReduceSlots > 0) ?
+                              4 : ((neededMapSlots > 0 || neededReduceSlots > 0) ? 2 : 0);
+
         cpus = -1.0;
         mem = -1.0;
         disk = -1.0;
+
         Set<Integer> ports = new HashSet<Integer>();
         String cpuRole = new String("*");
         String memRole = cpuRole;
@@ -258,7 +266,7 @@ public class ResourcePolicy {
                 LOG.warn("Ignoring invalid port range: begin=" + begin + " end=" + end);
                 continue;
               }
-              while (begin <= end && ports.size() < 2) {
+              while (begin <= end && ports.size() < neededPorts) {
                 int port = begin + (int)(Math.random() * ((end - begin) + 1));
                 ports.add(port);
                 begin += 1;
@@ -287,266 +295,68 @@ public class ResourcePolicy {
         double taskMem = (mapSlots + reduceSlots) * slotMem + containerMem;
         double taskDisk = (mapSlots + reduceSlots) * slotDisk + containerDisk;
 
-        if (!sufficient || ports.size() < 2) {
+        if (!sufficient || ports.size() < neededPorts) {
           LOG.info(join("\n", Arrays.asList(
               "Declining offer with insufficient resources for a TaskTracker: ",
               "  cpus: offered " + cpus + " needed at least " + taskCpus,
               "  mem : offered " + mem + " needed at least " + taskMem,
               "  disk: offered " + disk + " needed at least " + taskDisk,
-              "  ports: " + (ports.size() < 2
-                  ? " less than 2 offered"
-                  : " at least 2 (sufficient)"))));
+              "  ports: " + (ports.size() < neededPorts
+                  ? " less than " + neededPorts + " offered"
+                  : " at least " + neededPorts + " (sufficient)"))));
 
           schedulerDriver.declineOffer(offer.getId());
           continue;
         }
 
         Iterator<Integer> portIter = ports.iterator();
-        HttpHost httpAddress = new HttpHost(offer.getHostname(), portIter.next());
-        HttpHost reportAddress = new HttpHost(offer.getHostname(), portIter.next());
+        ArrayList<TaskInfo> tasks = new ArrayList<TaskInfo>();
 
-        // Check that this tracker is not already launched.  This problem was
-        // observed on a few occasions, but not reliably.  The main symptom was
-        // that entries in `mesosTrackers` were being lost, and task trackers
-        // would be 'lost' mysteriously (probably because the ports were in
-        // use).  This problem has since gone away with a rewrite of the port
-        // selection code, but the check + logging is left here.
-        // TODO(brenden): Diagnose this to determine root cause.
-        if (scheduler.mesosTrackers.containsKey(httpAddress)) {
-          LOG.info(join("\n", Arrays.asList(
-              "Declining offer because host/port combination is in use: ",
-              "  cpus: offered " + cpus + " needed " + taskCpus,
-              "  mem : offered " + mem + " needed " + taskMem,
-              "  disk: offered " + disk + " needed " + taskDisk,
-              "  ports: " + ports)));
+        if (mapSlots > 0) {
+          TaskInfo taskInfo = buildTaskInfo(
+            offer,
+            mapSlots,
+            TaskType.MAP,
+            portIter.next(),
+            portIter.next(),
+            cpuRole, memRole, diskRole, portsRole
+          );
 
-          schedulerDriver.declineOffer(offer.getId());
-          continue;
-        }
-
-        TaskID taskId = TaskID.newBuilder()
-            .setValue("Task_Tracker_" + scheduler.launchedTrackers++).build();
-
-        LOG.info("Launching task " + taskId.getValue() + " on "
-            + httpAddress.toString() + " with mapSlots=" + mapSlots + " reduceSlots=" + reduceSlots);
-
-        List<String> defaultJvmOpts = Arrays.asList(
-            "-XX:+UseConcMarkSweepGC",
-            "-XX:+CMSParallelRemarkEnabled",
-            "-XX:+CMSClassUnloadingEnabled",
-            "-XX:+UseParNewGC",
-            "-XX:TargetSurvivorRatio=80",
-            "-XX:+UseTLAB",
-            "-XX:ParallelGCThreads=2",
-            "-XX:+AggressiveOpts",
-            "-XX:+UseCompressedOops",
-            "-XX:+UseFastEmptyMethods",
-            "-XX:+UseFastAccessorMethods",
-            "-Xss512k",
-            "-XX:+AlwaysPreTouch",
-            "-XX:CMSInitiatingOccupancyFraction=80"
-        );
-
-        String jvmOpts = scheduler.conf.get("mapred.mesos.executor.jvm.opts");
-        if (jvmOpts == null) {
-            jvmOpts = StringUtils.join(" ", defaultJvmOpts);
-        }
-
-        // Set up the environment for running the TaskTracker.
-        Protos.Environment.Builder envBuilder = Protos.Environment
-            .newBuilder()
-            .addVariables(
-                Protos.Environment.Variable.newBuilder()
-                    .setName("HADOOP_OPTS")
-                    .setValue(
-                        jvmOpts +
-                            " -Xmx" + tasktrackerJVMHeap + "m" +
-                            " -XX:NewSize=" + tasktrackerJVMHeap / 3 + "m -XX:MaxNewSize=" + (int)Math.floor
-                            (tasktrackerJVMHeap * 0.6) + "m"
-                    ));
-
-        // Set java specific environment, appropriately.
-        Map<String, String> env = System.getenv();
-        if (env.containsKey("JAVA_HOME")) {
-          envBuilder.addVariables(Protos.Environment.Variable.newBuilder()
-              .setName("JAVA_HOME")
-              .setValue(env.get("JAVA_HOME")));
-        }
-
-        if (env.containsKey("JAVA_LIBRARY_PATH")) {
-          envBuilder.addVariables(Protos.Environment.Variable.newBuilder()
-              .setName("JAVA_LIBRARY_PATH")
-              .setValue(env.get("JAVA_LIBRARY_PATH")));
-        }
-
-        // Command info differs when performing a local run.
-        String master = scheduler.conf.get("mapred.mesos.master");
-
-        if (master == null) {
-          throw new RuntimeException(
-              "Expecting configuration property 'mapred.mesos.master'");
-        } else if (master == "local") {
-          throw new RuntimeException(
-              "Can not use 'local' for 'mapred.mesos.executor'");
-        }
-
-        String uri = scheduler.conf.get("mapred.mesos.executor.uri");
-        String directory = scheduler.conf.get("mapred.mesos.executor.directory");
-        boolean isUriSet = uri != null && !uri.equals("");
-        boolean isDirectorySet = directory != null && !directory.equals("");
-
-        if (!isUriSet && !isDirectorySet) {
-          throw new RuntimeException(
-              "Expecting configuration property 'mapred.mesos.executor'");
-        } else if (isUriSet && isDirectorySet) {
-          throw new RuntimeException(
-              "Conflicting properties 'mapred.mesos.executor.uri' and 'mapred.mesos.executor.directory', only one can be set");
-        } else if (!isDirectorySet) {
-          LOG.info("URI: " + uri + ", name: " + new File(uri).getName());
-
-          directory = new File(uri).getName().split("\\.")[0] + "*";
-        } else if (!isUriSet) {
-	    LOG.info("mapred.mesos.executor.uri is not set, relying on configured 'mapred.mesos.executor.directory' for working Hadoop distribution");
-        }
-
-        String command = scheduler.conf.get("mapred.mesos.executor.command");
-        if (command == null || command.equals("")) {
-          command = "env ; ./bin/hadoop org.apache.hadoop.mapred.MesosExecutor";
-        }
-
-        CommandInfo.Builder commandInfo = CommandInfo.newBuilder();
-        commandInfo
-            .setEnvironment(envBuilder)
-            .setValue(String.format("cd %s && %s", directory, command));
-        if (uri != null) {
-            commandInfo.addUris(CommandInfo.URI.newBuilder().setValue(uri));
-        }
-
-        // Populate ContainerInfo if needed
-        String containerImage = scheduler.conf.get("mapred.mesos.container.image");
-        String[] containerOptions = scheduler.conf.getStrings("mapred.mesos.container.options");
-
-        if (containerImage != null || (containerOptions != null && containerOptions.length > 0)) {
-          CommandInfo.ContainerInfo.Builder containerInfo =
-              CommandInfo.ContainerInfo.newBuilder();
-
-          if (containerImage != null) {
-            containerInfo.setImage(containerImage);
+          if (taskInfo == null) {
+            schedulerDriver.declineOffer(offer.getId());
+            continue;
           }
 
-          if (containerOptions != null) {
-            for (int i = 0; i < containerOptions.length; i++) {
-              containerInfo.addOptions(containerOptions[i]);
-            }
+          tasks.add(taskInfo);
+        }
+
+        if (reduceSlots > 0) {
+          TaskInfo taskInfo = buildTaskInfo(
+            offer,
+            reduceSlots,
+            TaskType.REDUCE,
+            portIter.next(),
+            portIter.next(),
+            cpuRole, memRole, diskRole, portsRole
+          );
+
+          if (taskInfo == null) {
+            schedulerDriver.declineOffer(offer.getId());
+            continue;
           }
 
-          commandInfo.setContainer(containerInfo.build());
+          tasks.add(taskInfo);
         }
 
-        // Create a configuration from the current configuration and
-        // override properties as appropriate for the TaskTracker.
-        Configuration overrides = new Configuration(scheduler.conf);
+        // Launch the tasks or decline the offer
+        if (tasks.size() > 0) {
+          schedulerDriver.launchTasks(Arrays.asList(offer.getId()), tasks);
 
-        overrides.set("mapred.task.tracker.http.address",
-            httpAddress.getHostName() + ':' + httpAddress.getPort());
-
-        overrides.set("mapred.task.tracker.report.address",
-            reportAddress.getHostName() + ':' + reportAddress.getPort());
-
-        overrides.setLong("mapred.tasktracker.map.tasks.maximum", mapSlots);
-        overrides.setLong("mapred.tasktracker.reduce.tasks.maximum", reduceSlots);
-
-        // Build up the executor info
-        ExecutorInfo executor = ExecutorInfo
-            .newBuilder()
-            .setExecutorId(ExecutorID.newBuilder().setValue(
-                "executor_" + taskId.getValue()))
-            .setName("Hadoop TaskTracker")
-            .setSource(taskId.getValue())
-            .addResources(
-                Resource
-                    .newBuilder()
-                    .setName("cpus")
-                    .setType(Value.Type.SCALAR)
-                    .setRole(cpuRole)
-                    .setScalar(Value.Scalar.newBuilder().setValue(containerCpus)))
-            .addResources(
-                Resource
-                    .newBuilder()
-                    .setName("mem")
-                    .setType(Value.Type.SCALAR)
-                    .setRole(memRole)
-                    .setScalar(Value.Scalar.newBuilder().setValue(containerMem)))
-            .addResources(
-                Resource
-                    .newBuilder()
-                    .setName("disk")
-                    .setType(Value.Type.SCALAR)
-                    .setRole(diskRole)
-                    .setScalar(Value.Scalar.newBuilder().setValue(containerDisk)))
-            .setCommand(commandInfo.build())
-            .build();
-
-        ByteString taskData;
-
-        try {
-          taskData = org.apache.mesos.hadoop.Utils.confToBytes(overrides);
-        } catch (IOException e) {
-          LOG.error("Caught exception serializing configuration");
-
-          // Skip this offer completely
+          neededMapSlots -= mapSlots;
+          neededReduceSlots -= reduceSlots;
+        } else {
           schedulerDriver.declineOffer(offer.getId());
-          continue;
         }
-
-        // Create the TaskTracker TaskInfo
-        TaskInfo trackerTaskInfo = TaskInfo
-            .newBuilder()
-            .setName(taskId.getValue())
-            .setTaskId(taskId)
-            .setSlaveId(offer.getSlaveId())
-            .addResources(
-                Resource
-                    .newBuilder()
-                    .setName("ports")
-                    .setType(Value.Type.RANGES)
-                    .setRole(portsRole)
-                    .setRanges(
-                        Value.Ranges
-                            .newBuilder()
-                            .addRange(Value.Range.newBuilder()
-                                .setBegin(httpAddress.getPort())
-                                .setEnd(httpAddress.getPort()))
-                            .addRange(Value.Range.newBuilder()
-                                .setBegin(reportAddress.getPort())
-                                .setEnd(reportAddress.getPort()))))
-            .addResources(
-                Resource
-                    .newBuilder()
-                    .setName("cpus")
-                    .setType(Value.Type.SCALAR)
-                    .setRole(cpuRole)
-                    .setScalar(Value.Scalar.newBuilder().setValue(taskCpus - containerCpus)))
-            .addResources(
-                Resource
-                    .newBuilder()
-                    .setName("mem")
-                    .setType(Value.Type.SCALAR)
-                    .setRole(memRole)
-                    .setScalar(Value.Scalar.newBuilder().setValue(taskMem - containerCpus)))
-            .setData(taskData)
-            .setExecutor(executor)
-            .build();
-
-        // Add this tracker to Mesos tasks.
-        scheduler.mesosTrackers.put(httpAddress, new MesosTracker(httpAddress, taskId,
-            mapSlots, reduceSlots, scheduler));
-
-        // Launch the task
-        schedulerDriver.launchTasks(Arrays.asList(offer.getId()), Arrays.asList(trackerTaskInfo));
-
-        neededMapSlots -= mapSlots;
-        neededReduceSlots -= reduceSlots;
       }
 
       if (neededMapSlots <= 0 && neededReduceSlots <= 0) {
@@ -558,5 +368,248 @@ public class ResourcePolicy {
             + "remaining");
       }
     }
+  }
+
+  private TaskInfo buildTaskInfo(Offer offer, long slots, TaskType type,
+                                 Integer httpPort, Integer reportPort,
+                                 String cpuRole, String memRole, String diskRole,
+                                 String portsRole) {
+
+    HttpHost httpAddress = new HttpHost(offer.getHostname(), httpPort);
+    HttpHost reportAddress = new HttpHost(offer.getHostname(), reportPort);
+
+    // Check that this tracker is not already launched.  This problem was
+    // observed on a few occasions, but not reliably. The main symptom was
+    // that entries in `mesosTrackers` were being lost, and task trackers
+    // would be 'lost' mysteriously (probably because the ports were in
+    // use).  This problem has since gone away with a rewrite of the port
+    // selection code, but the check + logging is left here.
+    // TODO(brenden): Diagnose this to determine root cause.
+    if (scheduler.mesosTrackers.containsKey(httpAddress)) {
+      LOG.info("Declining offer because host/port combination is in use");
+      return null;
+    }
+
+    String typeStr = (type == TaskType.MAP) ? "Map" : "Reduce";
+    TaskID taskId = TaskID.newBuilder()
+        .setValue("Task_Tracker_" + typeStr + "_" + scheduler.launchedTrackers++)
+        .build();
+
+    LOG.info("Launching task " + taskId.getValue() + " on "
+        + httpAddress.toString() + " with " + typeStr.toLowerCase() + "Slots=" + slots);
+
+    List<String> defaultJvmOpts = Arrays.asList(
+        "-XX:+UseConcMarkSweepGC",
+        "-XX:+CMSParallelRemarkEnabled",
+        "-XX:+CMSClassUnloadingEnabled",
+        "-XX:+UseParNewGC",
+        "-XX:TargetSurvivorRatio=80",
+        "-XX:+UseTLAB",
+        "-XX:ParallelGCThreads=2",
+        "-XX:+AggressiveOpts",
+        "-XX:+UseCompressedOops",
+        "-XX:+UseFastEmptyMethods",
+        "-XX:+UseFastAccessorMethods",
+        "-Xss512k",
+        "-XX:+AlwaysPreTouch",
+        "-XX:CMSInitiatingOccupancyFraction=80"
+    );
+
+    String jvmOpts = scheduler.conf.get("mapred.mesos.executor.jvm.opts");
+    if (jvmOpts == null) {
+        jvmOpts = StringUtils.join(" ", defaultJvmOpts);
+    }
+
+    // Set up the environment for running the TaskTracker.
+    Protos.Environment.Builder envBuilder = Protos.Environment
+        .newBuilder()
+        .addVariables(
+            Protos.Environment.Variable.newBuilder()
+                .setName("HADOOP_OPTS")
+                .setValue(
+                    jvmOpts +
+                        " -Xmx" + tasktrackerJVMHeap + "m" +
+                        " -XX:NewSize=" + tasktrackerJVMHeap / 3 + "m -XX:MaxNewSize=" + (int)Math.floor
+                        (tasktrackerJVMHeap * 0.6) + "m"
+                ));
+
+    // Set java specific environment, appropriately.
+    Map<String, String> env = System.getenv();
+    if (env.containsKey("JAVA_HOME")) {
+      envBuilder.addVariables(Protos.Environment.Variable.newBuilder()
+          .setName("JAVA_HOME")
+          .setValue(env.get("JAVA_HOME")));
+    }
+
+    if (env.containsKey("JAVA_LIBRARY_PATH")) {
+      envBuilder.addVariables(Protos.Environment.Variable.newBuilder()
+          .setName("JAVA_LIBRARY_PATH")
+          .setValue(env.get("JAVA_LIBRARY_PATH")));
+    }
+
+    // Command info differs when performing a local run.
+    String master = scheduler.conf.get("mapred.mesos.master");
+
+    if (master == null) {
+      throw new RuntimeException(
+          "Expecting configuration property 'mapred.mesos.master'");
+    } else if (master == "local") {
+      throw new RuntimeException(
+          "Can not use 'local' for 'mapred.mesos.executor'");
+    }
+
+    String uri = scheduler.conf.get("mapred.mesos.executor.uri");
+    String directory = scheduler.conf.get("mapred.mesos.executor.directory");
+    boolean isUriSet = uri != null && !uri.equals("");
+    boolean isDirectorySet = directory != null && !directory.equals("");
+
+    if (!isUriSet && !isDirectorySet) {
+      throw new RuntimeException(
+          "Expecting configuration property 'mapred.mesos.executor'");
+    } else if (isUriSet && isDirectorySet) {
+      throw new RuntimeException(
+          "Conflicting properties 'mapred.mesos.executor.uri' and 'mapred.mesos.executor.directory', only one can be set");
+    } else if (!isDirectorySet) {
+      LOG.info("URI: " + uri + ", name: " + new File(uri).getName());
+
+      directory = new File(uri).getName().split("\\.")[0] + "*";
+    } else if (!isUriSet) {
+  LOG.info("mapred.mesos.executor.uri is not set, relying on configured 'mapred.mesos.executor.directory' for working Hadoop distribution");
+    }
+
+    String command = scheduler.conf.get("mapred.mesos.executor.command");
+    if (command == null || command.equals("")) {
+      command = "env ; ./bin/hadoop org.apache.hadoop.mapred.MesosExecutor";
+    }
+
+    CommandInfo.Builder commandInfo = CommandInfo.newBuilder();
+    commandInfo
+        .setEnvironment(envBuilder)
+        .setValue(String.format("cd %s && %s", directory, command));
+    if (uri != null) {
+        commandInfo.addUris(CommandInfo.URI.newBuilder().setValue(uri));
+    }
+
+    // Populate ContainerInfo if needed
+    String containerImage = scheduler.conf.get("mapred.mesos.container.image");
+    String[] containerOptions = scheduler.conf.getStrings("mapred.mesos.container.options");
+
+    if (containerImage != null || (containerOptions != null && containerOptions.length > 0)) {
+      CommandInfo.ContainerInfo.Builder containerInfo =
+          CommandInfo.ContainerInfo.newBuilder();
+
+      if (containerImage != null) {
+        containerInfo.setImage(containerImage);
+      }
+
+      if (containerOptions != null) {
+        for (int i = 0; i < containerOptions.length; i++) {
+          containerInfo.addOptions(containerOptions[i]);
+        }
+      }
+
+      commandInfo.setContainer(containerInfo.build());
+    }
+
+    // Create a configuration from the current configuration and
+    // override properties as appropriate for the TaskTracker.
+    Configuration overrides = new Configuration(scheduler.conf);
+
+    overrides.set("mapred.task.tracker.http.address",
+        httpAddress.getHostName() + ':' + httpAddress.getPort());
+
+    overrides.set("mapred.task.tracker.report.address",
+        reportAddress.getHostName() + ':' + reportAddress.getPort());
+
+    overrides.setLong("mapred.tasktracker." + typeStr.toLowerCase() + ".tasks.maximum", slots);
+
+    // Build up the executor info
+    ExecutorInfo executor = ExecutorInfo
+        .newBuilder()
+        .setExecutorId(ExecutorID.newBuilder().setValue(
+            "executor_" + taskId.getValue()))
+        .setName("Hadoop TaskTracker")
+        .setSource(taskId.getValue())
+        .addResources(
+            Resource
+                .newBuilder()
+                .setName("cpus")
+                .setType(Value.Type.SCALAR)
+                .setRole(cpuRole)
+                .setScalar(Value.Scalar.newBuilder().setValue(containerCpus)))
+        .addResources(
+            Resource
+                .newBuilder()
+                .setName("mem")
+                .setType(Value.Type.SCALAR)
+                .setRole(memRole)
+                .setScalar(Value.Scalar.newBuilder().setValue(containerMem)))
+        .addResources(
+            Resource
+                .newBuilder()
+                .setName("disk")
+                .setType(Value.Type.SCALAR)
+                .setRole(diskRole)
+                .setScalar(Value.Scalar.newBuilder().setValue(containerDisk)))
+        .setCommand(commandInfo.build())
+        .build();
+
+    ByteString taskData;
+
+    try {
+      taskData = org.apache.mesos.hadoop.Utils.confToBytes(overrides);
+    } catch (IOException e) {
+      LOG.error("Caught exception serializing configuration.");
+      return null;
+    }
+
+    double taskCpus = slots * slotCpus;
+    double taskMem = slots * slotMem;
+    double taskDisk = slots * slotDisk;
+
+    // Create the TaskTracker TaskInfo
+    TaskInfo trackerTaskInfo = TaskInfo
+        .newBuilder()
+        .setName(taskId.getValue())
+        .setTaskId(taskId)
+        .setSlaveId(offer.getSlaveId())
+        .addResources(
+            Resource
+                .newBuilder()
+                .setName("ports")
+                .setType(Value.Type.RANGES)
+                .setRole(portsRole)
+                .setRanges(
+                    Value.Ranges
+                        .newBuilder()
+                        .addRange(Value.Range.newBuilder()
+                            .setBegin(httpAddress.getPort())
+                            .setEnd(httpAddress.getPort()))
+                        .addRange(Value.Range.newBuilder()
+                            .setBegin(reportAddress.getPort())
+                            .setEnd(reportAddress.getPort()))))
+        .addResources(
+            Resource
+                .newBuilder()
+                .setName("cpus")
+                .setType(Value.Type.SCALAR)
+                .setRole(cpuRole)
+                .setScalar(Value.Scalar.newBuilder().setValue(taskCpus)))
+        .addResources(
+            Resource
+                .newBuilder()
+                .setName("mem")
+                .setType(Value.Type.SCALAR)
+                .setRole(memRole)
+                .setScalar(Value.Scalar.newBuilder().setValue(taskMem)))
+        .setData(taskData)
+        .setExecutor(executor)
+        .build();
+
+    // Add this tracker to Mesos tasks.
+    scheduler.mesosTrackers.put(httpAddress, new MesosTracker(httpAddress, taskId,
+        slots, type, scheduler));
+
+    return trackerTaskInfo;
   }
 }

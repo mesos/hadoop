@@ -3,6 +3,7 @@ package org.apache.hadoop.mapred;
 import org.apache.commons.httpclient.HttpHost;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.mapreduce.TaskType;
 import org.apache.mesos.Protos.TaskID;
 
 import java.util.Collection;
@@ -20,8 +21,8 @@ public class MesosTracker {
   public static final Log LOG = LogFactory.getLog(MesosScheduler.class);
   public volatile HttpHost host;
   public TaskID taskId;
-  public long mapSlots;
-  public long reduceSlots;
+  public long slots;
+  public TaskType slotType;
   public volatile long idleCounter = 0;
   public volatile long idleCheckInterval = 0;
   public volatile long idleCheckMax = 0;
@@ -32,12 +33,12 @@ public class MesosTracker {
   public Set<JobID> jobs = Collections.newSetFromMap(new ConcurrentHashMap<JobID, Boolean>());
   public com.codahale.metrics.Timer.Context context;
 
-  public MesosTracker(HttpHost host, TaskID taskId, long mapSlots,
-                      long reduceSlots, MesosScheduler scheduler) {
+  public MesosTracker(HttpHost host, TaskID taskId, long slots,
+                      TaskType slotType, MesosScheduler scheduler) {
     this.host = host;
     this.taskId = taskId;
-    this.mapSlots = mapSlots;
-    this.reduceSlots = reduceSlots;
+    this.slots = slots;
+    this.slotType = slotType;
     this.scheduler = scheduler;
 
     if (scheduler.metrics != null) {
@@ -119,23 +120,23 @@ public class MesosTracker {
           return;
         }
 
-        long idleMapSlots = 0;
-        long idleReduceSlots = 0;
+        long idleSlots = 0;
 
         Collection<TaskTrackerStatus> taskTrackers = scheduler.jobTracker.taskTrackers();
         for (TaskTrackerStatus status : taskTrackers) {
           HttpHost host = new HttpHost(status.getHost(), status.getHttpPort());
           if (host.toString().equals(MesosTracker.this.host.toString())) {
-            idleMapSlots += status.getAvailableMapSlots();
-            idleReduceSlots += status.getAvailableReduceSlots();
+            if (slotType == TaskType.MAP) {
+              idleSlots += status.getAvailableMapSlots();
+            } else {
+              idleSlots += status.getAvailableReduceSlots();
+            }
+
             break;
           }
         }
 
-        trackerIsIdle = idleMapSlots == MesosTracker.this.mapSlots &&
-                        idleReduceSlots == MesosTracker.this.reduceSlots;
-
-        if (trackerIsIdle) {
+        if (idleSlots == MesosTracker.this.slots) {
           LOG.info("TaskTracker appears idle right now: " + MesosTracker.this.host);
           MesosTracker.this.idleCounter += 1;
         } else {
