@@ -17,7 +17,7 @@ import java.util.*;
 
 import static org.apache.hadoop.util.StringUtils.join;
 
-public class ResourcePolicy {
+public abstract class ResourcePolicy {
   public static final Log LOG = LogFactory.getLog(ResourcePolicy.class);
   public volatile MesosScheduler scheduler;
   public int neededMapSlots;
@@ -71,142 +71,13 @@ public class ResourcePolicy {
     containerMem = tasktrackerMem;
   }
 
-  public void computeNeededSlots(List<JobInProgress> jobsInProgress,
-                                 Collection<TaskTrackerStatus> taskTrackers) {
-    // Compute the number of pending maps and reduces.
-    int pendingMaps = 0;
-    int pendingReduces = 0;
-    int runningMaps = 0;
-    int runningReduces = 0;
-
-    for (JobInProgress progress : jobsInProgress) {
-      // JobStatus.pendingMaps/Reduces may return the wrong value on
-      // occasion.  This seems to be safer.
-      pendingMaps += scheduler.getPendingTasks(progress.getTasks(TaskType.MAP));
-      pendingReduces += scheduler.getPendingTasks(progress.getTasks(TaskType.REDUCE));
-      runningMaps += progress.runningMaps();
-      runningReduces += progress.runningReduces();
-
-      // If the task is waiting to launch the cleanup task, let us make sure we have
-      // capacity to run the task.
-      if (!progress.isCleanupLaunched()) {
-        pendingMaps += scheduler.getPendingTasks(progress.getTasks(TaskType.JOB_CLEANUP));
-      }
-    }
-
-    // Mark active (heartbeated) TaskTrackers and compute idle slots.
-    int idleMapSlots = 0;
-    int idleReduceSlots = 0;
-    int unhealthyTrackers = 0;
-
-    for (TaskTrackerStatus status : taskTrackers) {
-      if (!status.getHealthStatus().isNodeHealthy()) {
-        // Skip this node if it's unhealthy.
-        ++unhealthyTrackers;
-        continue;
-      }
-
-      HttpHost host = new HttpHost(status.getHost(), status.getHttpPort());
-      if (scheduler.mesosTrackers.containsKey(host)) {
-        scheduler.mesosTrackers.get(host).active = true;
-        idleMapSlots += status.getAvailableMapSlots();
-        idleReduceSlots += status.getAvailableReduceSlots();
-      }
-    }
-
-    // Consider the TaskTrackers that have yet to become active as being idle,
-    // otherwise we will launch excessive TaskTrackers.
-    int inactiveMapSlots = 0;
-    int inactiveReduceSlots = 0;
-    for (MesosTracker tracker : scheduler.mesosTrackers.values()) {
-      if (!tracker.active) {
-        inactiveMapSlots += tracker.mapSlots;
-        inactiveReduceSlots += tracker.reduceSlots;
-      }
-    }
-
-    // To ensure Hadoop jobs begin promptly, we can specify a minimum number
-    // of 'hot slots' to be available for use.  This addresses the
-    // TaskTracker spin up delay that exists with Hadoop on Mesos.  This can
-    // be a nuisance with lower latency applications, such as ad-hoc Hive
-    // queries.
-    int minimumMapSlots = scheduler.conf.getInt("mapred.mesos.total.map.slots.minimum", 0);
-    int minimumReduceSlots =
-        scheduler.conf.getInt("mapred.mesos.total.reduce.slots.minimum", 0);
-
-    // Compute how many slots we need to allocate.
-    neededMapSlots = Math.max(
-        minimumMapSlots - (idleMapSlots + inactiveMapSlots),
-        pendingMaps - (idleMapSlots + inactiveMapSlots));
-    neededReduceSlots = Math.max(
-        minimumReduceSlots - (idleReduceSlots + inactiveReduceSlots),
-        pendingReduces - (idleReduceSlots + inactiveReduceSlots));
-
-    LOG.info(join("\n", Arrays.asList(
-        "JobTracker Status",
-        "      Pending Map Tasks: " + pendingMaps,
-        "   Pending Reduce Tasks: " + pendingReduces,
-        "      Running Map Tasks: " + runningMaps,
-        "   Running Reduce Tasks: " + runningReduces,
-        "         Idle Map Slots: " + idleMapSlots,
-        "      Idle Reduce Slots: " + idleReduceSlots,
-        "     Inactive Map Slots: " + inactiveMapSlots
-            + " (launched but no hearbeat yet)",
-        "  Inactive Reduce Slots: " + inactiveReduceSlots
-            + " (launched but no hearbeat yet)",
-        "       Needed Map Slots: " + neededMapSlots,
-        "    Needed Reduce Slots: " + neededReduceSlots,
-        "     Unhealthy Trackers: " + unhealthyTrackers)));
-
-    if (scheduler.stateFile != null) {
-      // Update state file
-      synchronized (this) {
-        Set<String> hosts = new HashSet<String>();
-        for (MesosTracker tracker : scheduler.mesosTrackers.values()) {
-          hosts.add(tracker.host.getHostName());
-        }
-        try {
-          File tmp = new File(scheduler.stateFile.getAbsoluteFile() + ".tmp");
-          FileWriter fstream = new FileWriter(tmp);
-          fstream.write(join("\n", Arrays.asList(
-              "time=" + System.currentTimeMillis(),
-              "pendingMaps=" + pendingMaps,
-              "pendingReduces=" + pendingReduces,
-              "runningMaps=" + runningMaps,
-              "runningReduces=" + runningReduces,
-              "idleMapSlots=" + idleMapSlots,
-              "idleReduceSlots=" + idleReduceSlots,
-              "inactiveMapSlots=" + inactiveMapSlots,
-              "inactiveReduceSlots=" + inactiveReduceSlots,
-              "neededMapSlots=" + neededMapSlots,
-              "neededReduceSlots=" + neededReduceSlots,
-              "unhealthyTrackers=" + unhealthyTrackers,
-              "hosts=" + join(",", hosts),
-              "")));
-          fstream.close();
-          tmp.renameTo(scheduler.stateFile);
-        } catch (Exception e) {
-          LOG.error("Can't write state file: " + e.getMessage());
-        }
-      }
-    }
-  }
-
-  // This method computes the number of slots to launch for this offer, and
-  // returns true if the offer is sufficient.
-  // Must be overridden.
-  public boolean computeSlots() {
-    return false;
-  }
-
-  public void resourceOffers(SchedulerDriver schedulerDriver,
-                             List<Offer> offers) {
-    final HttpHost jobTrackerAddress =
-        new HttpHost(scheduler.jobTracker.getHostname(), scheduler.jobTracker.getTrackerPort());
+  public void resourceOffers(SchedulerDriver schedulerDriver, List<Offer> offers) {
+//    final HttpHost jobTrackerAddress =
+//        new HttpHost(scheduler.jobTracker.getHostname(), scheduler.jobTracker.getTrackerPort());
 
     final Collection<TaskTrackerStatus> taskTrackers = scheduler.jobTracker.taskTrackers();
 
-    final List<JobInProgress> jobsInProgress = new ArrayList<JobInProgress>();
+    final List<JobInProgress> jobsInProgress = new ArrayList<>();
     for (JobStatus status : scheduler.jobTracker.jobsToComplete()) {
       jobsInProgress.add(scheduler.jobTracker.getJob(status.getJobID()));
     }
@@ -229,7 +100,7 @@ public class ResourcePolicy {
         mem = -1.0;
         disk = -1.0;
         Set<Integer> ports = new HashSet<Integer>();
-        String cpuRole = new String("*");
+        String cpuRole = "*";
         String memRole = cpuRole;
         String diskRole = cpuRole;
         String portsRole = cpuRole;
@@ -385,7 +256,7 @@ public class ResourcePolicy {
         if (master == null) {
           throw new RuntimeException(
               "Expecting configuration property 'mapred.mesos.master'");
-        } else if (master == "local") {
+        } else if (Objects.equals(master, "local")) {
           throw new RuntimeException(
               "Can not use 'local' for 'mapred.mesos.executor'");
         }
@@ -435,8 +306,8 @@ public class ResourcePolicy {
           }
 
           if (containerOptions != null) {
-            for (int i = 0; i < containerOptions.length; i++) {
-              containerInfo.addOptions(containerOptions[i]);
+            for (String containerOption : containerOptions) {
+              containerInfo.addOptions(containerOption);
             }
           }
 
@@ -559,4 +430,133 @@ public class ResourcePolicy {
       }
     }
   }
+
+  public void computeNeededSlots(List<JobInProgress> jobsInProgress,
+                                 Collection<TaskTrackerStatus> taskTrackers) {
+    // Compute the number of pending maps and reduces.
+    int pendingMaps = 0;
+    int pendingReduces = 0;
+    int runningMaps = 0;
+    int runningReduces = 0;
+
+    for (JobInProgress progress : jobsInProgress) {
+      // JobStatus.pendingMaps/Reduces may return the wrong value on
+      // occasion.  This seems to be safer.
+      pendingMaps += scheduler.getPendingTasks(progress.getTasks(TaskType.MAP));
+      pendingReduces += scheduler.getPendingTasks(progress.getTasks(TaskType.REDUCE));
+      runningMaps += progress.runningMaps();
+      runningReduces += progress.runningReduces();
+
+      // If the task is waiting to launch the cleanup task, let us make sure we have
+      // capacity to run the task.
+      if (!progress.isCleanupLaunched()) {
+        pendingMaps += scheduler.getPendingTasks(progress.getTasks(TaskType.JOB_CLEANUP));
+      }
+    }
+
+    // Mark active (heartbeated) TaskTrackers and compute idle slots.
+    int idleMapSlots = 0;
+    int idleReduceSlots = 0;
+    int unhealthyTrackers = 0;
+
+    for (TaskTrackerStatus status : taskTrackers) {
+      if (!status.getHealthStatus().isNodeHealthy()) {
+        // Skip this node if it's unhealthy.
+        ++unhealthyTrackers;
+        continue;
+      }
+
+      HttpHost host = new HttpHost(status.getHost(), status.getHttpPort());
+      if (scheduler.mesosTrackers.containsKey(host)) {
+        scheduler.mesosTrackers.get(host).active = true;
+        idleMapSlots += status.getAvailableMapSlots();
+        idleReduceSlots += status.getAvailableReduceSlots();
+      }
+    }
+
+    // Consider the TaskTrackers that have yet to become active as being idle,
+    // otherwise we will launch excessive TaskTrackers.
+    int inactiveMapSlots = 0;
+    int inactiveReduceSlots = 0;
+    for (MesosTracker tracker : scheduler.mesosTrackers.values()) {
+      if (!tracker.active) {
+        inactiveMapSlots += tracker.mapSlots;
+        inactiveReduceSlots += tracker.reduceSlots;
+      }
+    }
+
+    // To ensure Hadoop jobs begin promptly, we can specify a minimum number
+    // of 'hot slots' to be available for use.  This addresses the
+    // TaskTracker spin up delay that exists with Hadoop on Mesos.  This can
+    // be a nuisance with lower latency applications, such as ad-hoc Hive
+    // queries.
+    int minimumMapSlots = scheduler.conf.getInt("mapred.mesos.total.map.slots.minimum", 0);
+    int minimumReduceSlots =
+        scheduler.conf.getInt("mapred.mesos.total.reduce.slots.minimum", 0);
+
+    // Compute how many slots we need to allocate.
+    neededMapSlots = Math.max(
+        minimumMapSlots - (idleMapSlots + inactiveMapSlots),
+        pendingMaps - (idleMapSlots + inactiveMapSlots));
+    neededReduceSlots = Math.max(
+        minimumReduceSlots - (idleReduceSlots + inactiveReduceSlots),
+        pendingReduces - (idleReduceSlots + inactiveReduceSlots));
+
+    LOG.info(join("\n", Arrays.asList(
+        "JobTracker Status",
+        "      Pending Map Tasks: " + pendingMaps,
+        "   Pending Reduce Tasks: " + pendingReduces,
+        "      Running Map Tasks: " + runningMaps,
+        "   Running Reduce Tasks: " + runningReduces,
+        "         Idle Map Slots: " + idleMapSlots,
+        "      Idle Reduce Slots: " + idleReduceSlots,
+        "     Inactive Map Slots: " + inactiveMapSlots
+            + " (launched but no hearbeat yet)",
+        "  Inactive Reduce Slots: " + inactiveReduceSlots
+            + " (launched but no hearbeat yet)",
+        "       Needed Map Slots: " + neededMapSlots,
+        "    Needed Reduce Slots: " + neededReduceSlots,
+        "     Unhealthy Trackers: " + unhealthyTrackers)));
+
+      File stateFile = scheduler.stateFile;
+      if (stateFile != null) {
+      // Update state file
+      synchronized (this) {
+        Set<String> hosts = new HashSet<>();
+        for (MesosTracker tracker : scheduler.mesosTrackers.values()) {
+          hosts.add(tracker.host.getHostName());
+        }
+        try {
+          File tmp = new File(stateFile.getAbsoluteFile() + ".tmp");
+          FileWriter fstream = new FileWriter(tmp);
+          fstream.write(join("\n", Arrays.asList(
+              "time=" + System.currentTimeMillis(),
+              "pendingMaps=" + pendingMaps,
+              "pendingReduces=" + pendingReduces,
+              "runningMaps=" + runningMaps,
+              "runningReduces=" + runningReduces,
+              "idleMapSlots=" + idleMapSlots,
+              "idleReduceSlots=" + idleReduceSlots,
+              "inactiveMapSlots=" + inactiveMapSlots,
+              "inactiveReduceSlots=" + inactiveReduceSlots,
+              "neededMapSlots=" + neededMapSlots,
+              "neededReduceSlots=" + neededReduceSlots,
+              "unhealthyTrackers=" + unhealthyTrackers,
+              "hosts=" + join(",", hosts),
+              "")));
+          fstream.close();
+          if (!tmp.renameTo(stateFile)) {
+              LOG.error("Can't overwrite state " + stateFile.getAbsolutePath());
+          }
+        } catch (Exception e) {
+          LOG.error("Can't write state file: " + e.getMessage());
+        }
+      }
+    }
+  }
+
+  // This method computes the number of slots to launch for this offer, and
+  // returns true if the offer is sufficient.
+  // Must be overridden.
+  public abstract boolean computeSlots();
 }
