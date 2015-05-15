@@ -1,6 +1,7 @@
 package org.apache.hadoop.mapred;
 
 import com.codahale.metrics.Meter;
+import com.google.protobuf.ByteString;
 import org.apache.commons.httpclient.HttpHost;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -14,6 +15,7 @@ import org.apache.mesos.SchedulerDriver;
 import org.apache.mesos.hadoop.Metrics;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -364,10 +366,35 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     String master = conf.get("mapred.mesos.master", "local");
 
     try {
-      FrameworkInfo frameworkInfo = FrameworkInfo.newBuilder().setUser("") // Let Mesos fill in the user.
-          .setCheckpoint(conf.getBoolean("mapred.mesos.checkpoint", false)).setRole(conf.get("mapred.mesos.role", "*")).setName("Hadoop: (RPC port: " + jobTracker.port + "," + " WebUI port: " + jobTracker.infoPort + ")").build();
+      FrameworkInfo frameworkInfo;
+      FrameworkInfo.Builder frameworkInfoBuilder = FrameworkInfo.newBuilder()
+              .setUser(conf.get("mapred.mesos.framework.user", "")) // Let Mesos fill in the user.
+              .setCheckpoint(conf.getBoolean("mapred.mesos.checkpoint", false))
+              .setRole(conf.get("mapred.mesos.role", "*"))
+              .setName(conf.get("mapred.mesos.framework.name", "Hadoop: (RPC port: " + jobTracker.port + ","
+                      + " WebUI port: " + jobTracker.infoPort + ")"));
 
-      driver = new MesosSchedulerDriver(this, frameworkInfo, master);
+      Credential credential = null;
+
+      String frameworkPrincipal = conf.get("mapred.mesos.framework.principal");
+      if (frameworkPrincipal != null) {
+        frameworkInfoBuilder.setPrincipal(frameworkPrincipal);
+        String secretFile = conf.get("mapred.mesos.framework.secretfile");
+        if (secretFile != null) {
+          credential = Credential.newBuilder()
+                  .setSecret(ByteString.readFrom(new FileInputStream(secretFile)))
+                  .setPrincipal(frameworkPrincipal)
+                  .build();
+        }
+      }
+      if (credential == null) {
+        LOG.info("Creating Schedule Driver");
+        driver = new MesosSchedulerDriver(this, frameworkInfoBuilder.build(), master);
+      } else {
+        LOG.info("Creatingg Schedule Driver, attempting to authenticate with Principal: " + credential.getPrincipal()
+                + ", secret:" + credential.getSecret());
+        driver = new MesosSchedulerDriver(this, frameworkInfoBuilder.build(), master, credential);
+      }
       driver.start();
     } catch (Exception e) {
       // If the MesosScheduler can't be loaded, the JobTracker won't be useful
