@@ -118,57 +118,58 @@ public class MesosTracker {
     scheduler.scheduleTimer(new Runnable() {
       @Override
       public void run() {
-        // We're not interested if the task tracker has been stopped.
-        if (MesosTracker.this.stopped) {
-          return;
-        }
+        synchronized (MesosTracker.this.scheduler) {
 
-        // If the task tracker isn't active, wait until it is active.
-        // TODO(tarnfeld): Do this based on some kind of lock/wait?
-        if (!MesosTracker.this.active) {
-          scheduleIdleCheck();
-          return;
-        }
-
-        boolean trackerIsIdle;
-
-        // We're only interested in TaskTrackers which have jobs assigned to them
-        // but are completely idle. The MesosScheduler is in charge of destroying
-        // task trackers that are not handling any jobs, so we can leave those alone.
-        if (MesosTracker.this.idleCounter >= MesosTracker.this.idleCheckMax) {
-          LOG.info("Killing idle tasktracker: " + MesosTracker.this.host);
-          MesosTracker.this.scheduler.killTracker(MesosTracker.this);
-          scheduleIdleCheck();
-          return;
-        }
-
-        long idleMapSlots = 0;
-        long idleReduceSlots = 0;
-
-        Collection<TaskTrackerStatus> taskTrackers = scheduler.jobTracker.taskTrackers();
-        for (TaskTrackerStatus status : taskTrackers) {
-          HttpHost host = new HttpHost(status.getHost(), status.getHttpPort());
-          if (host.toString().equals(MesosTracker.this.host.toString())) {
-            idleMapSlots += status.getAvailableMapSlots();
-            idleReduceSlots += status.getAvailableReduceSlots();
-            break;
+          // Stop the idle check timer if the scheduler has been stopped.
+          if (MesosTracker.this.stopped) {
+            return;
           }
-        }
 
-        trackerIsIdle = idleMapSlots == MesosTracker.this.mapSlots &&
-                        idleReduceSlots == MesosTracker.this.reduceSlots;
-
-        if (trackerIsIdle) {
-          LOG.info("TaskTracker appears idle right now: " + MesosTracker.this.host);
-          MesosTracker.this.idleCounter += 1;
-        } else {
-          if (MesosTracker.this.idleCounter > 0) {
-            LOG.info("TaskTracker is no longer idle: " + MesosTracker.this.host);
+          // If the task tracker isn't active, wait until it is active.
+          // If the task tracker has no jobs assigned to it, ignore it. We're
+          // only interested in a tracker that has jobs but isn't using any of
+          // the slots.
+          if (!MesosTracker.this.active || MesosTracker.this.jobs.isEmpty()) {
+            scheduleIdleCheck();
+            return;
           }
-          MesosTracker.this.idleCounter = 0;
-        }
 
-        scheduleIdleCheck();
+          // If the tracker has been idle for too long, kill it.
+          if (MesosTracker.this.idleCounter >= MesosTracker.this.idleCheckMax) {
+            LOG.info("Killing idle tasktracker " + MesosTracker.this.host);
+            MesosTracker.this.scheduler.killTracker(MesosTracker.this);
+            scheduleIdleCheck();
+            return;
+          }
+
+          // Calculate the number of map and reduce slots that are currently
+          // occupied on the task tracker.
+          long occupiedMapSlots =  0;
+          long occupiedReduceSlots = 0;
+          Collection<TaskTrackerStatus> taskTrackers = scheduler.jobTracker.taskTrackers();
+          for (TaskTrackerStatus status : taskTrackers) {
+            HttpHost host = new HttpHost(status.getHost(), status.getHttpPort());
+            if (host.toString().equals(MesosTracker.this.host.toString())) {
+              occupiedMapSlots += status.countOccupiedMapSlots();
+              occupiedReduceSlots += status.countOccupiedMapSlots();
+              break;
+            }
+          }
+
+          // If there are zero slots occupied (either map OR reduce slots) then
+          // we class the tracker as idle.
+          if (occupiedMapSlots == 0 && occupiedReduceSlots == 0) {
+            LOG.info("TaskTracker appears idle right now: " + MesosTracker.this.host);
+            MesosTracker.this.idleCounter += 1;
+          } else {
+            if (MesosTracker.this.idleCounter > 0) {
+              LOG.info("TaskTracker is no longer idle: " + MesosTracker.this.host);
+            }
+            MesosTracker.this.idleCounter = 0;
+          }
+
+          scheduleIdleCheck();
+        }
       }
     }, MesosTracker.this.idleCheckInterval, TimeUnit.SECONDS);
   }
