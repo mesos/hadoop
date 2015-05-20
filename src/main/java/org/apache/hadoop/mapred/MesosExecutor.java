@@ -2,6 +2,7 @@ package org.apache.hadoop.mapred;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.mapreduce.TaskType;
 import org.apache.mesos.Executor;
 import org.apache.mesos.ExecutorDriver;
 import org.apache.mesos.MesosExecutorDriver;
@@ -11,8 +12,15 @@ import org.apache.mesos.Protos.TaskStatus;
 
 import java.io.*;
 
+import java.util.Map;
+
 import java.lang.reflect.Field;
-import java.lang.ReflectiveOperationException;
+import java.lang.reflect.Method;
+import java.lang.reflect.InvocationTargetException;
+
+import java.lang.IllegalAccessException;
+import java.lang.NoSuchFieldException;
+import java.lang.NoSuchMethodException;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
@@ -24,8 +32,12 @@ public class MesosExecutor implements Executor {
 
   protected final ScheduledExecutorService timerScheduler =
       Executors.newScheduledThreadPool(1);
+
+  private boolean suicideTimerScheduled = false;
   private SlaveInfo slaveInfo;
   private TaskTracker taskTracker;
+  private TaskID mapTaskId;
+  private TaskID reduceTaskId;
 
   public static void main(String[] args) {
     MesosExecutorDriver driver = new MesosExecutorDriver(new MesosExecutor());
@@ -55,52 +67,79 @@ public class MesosExecutor implements Executor {
   public void launchTask(final ExecutorDriver driver, final TaskInfo task) {
     LOG.info("Launching task : " + task.getTaskId().getValue());
 
-    // Get configuration from task data (prepared by the JobTracker).
-    JobConf conf = configure(task);
+    synchronized(this) {
 
-    // NOTE: We need to manually set the context class loader here because,
-    // the TaskTracker is unable to find LoginModule class otherwise.
-    Thread.currentThread().setContextClassLoader(
-        TaskTracker.class.getClassLoader());
+      // Keep track of all the IDs we've been asked to monitor
+      if (task.getTaskId().getValue().endsWith("_Map")) {
+        mapTaskId = task.getTaskId();
+      } else if (task.getTaskId().getValue().endsWith("_Reduce")) {
+        reduceTaskId = task.getTaskId();
+      } else {
+        driver.sendStatusUpdate(TaskStatus.newBuilder()
+          .setTaskId(task.getTaskId())
+          .setState(TaskState.TASK_LOST).build());
 
-    try {
-      taskTracker = new TaskTracker(conf);
-    } catch (IOException | InterruptedException e) {
-      LOG.fatal("Failed to start TaskTracker", e);
-      System.exit(1);
-    }
+        return;
+      }
 
-    // Spin up a TaskTracker in a new thread.
-    new Thread("TaskTracker Run Thread") {
-      @Override
-      public void run() {
+      if (taskTracker == null) {
+        // Get configuration from task data (prepared by the JobTracker).
+        JobConf conf = configure(task);
+
+        // NOTE: We need to manually set the context class loader here because,
+        // the TaskTracker is unable to find LoginModule class otherwise.
+        Thread.currentThread().setContextClassLoader(
+            TaskTracker.class.getClassLoader());
+
         try {
-          taskTracker.run();
-
-          // Send a TASK_FINISHED status update.
-          // We do this here because we want to send it in a separate thread
-          // than was used to call killTask().
-          driver.sendStatusUpdate(TaskStatus.newBuilder()
-              .setTaskId(task.getTaskId())
-              .setState(TaskState.TASK_FINISHED)
-              .build());
-
-          // Give some time for the update to reach the slave.
-          try {
-            Thread.sleep(2000);
-          } catch (InterruptedException e) {
-            LOG.error("Failed to sleep TaskTracker thread", e);
-          }
-
-          // Stop the executor.
-          driver.stop();
-        } catch (Throwable t) {
-          LOG.fatal("Caught exception, committing suicide.", t);
-          driver.stop();
+          taskTracker = new TaskTracker(conf);
+        } catch (IOException | InterruptedException e) {
+          LOG.fatal("Failed to start TaskTracker", e);
           System.exit(1);
         }
+
+        // Spin up a TaskTracker in a new thread.
+        new Thread("TaskTracker Run Thread") {
+          @Override
+          public void run() {
+            try {
+              taskTracker.run();
+
+              // Send a TASK_FINISHED status update.
+              // We do this here because we want to send it in a separate thread
+              // than was used to call killTask().
+              if (mapTaskId != null) {
+                driver.sendStatusUpdate(TaskStatus.newBuilder()
+                  .setTaskId(mapTaskId)
+                  .setState(TaskState.TASK_FINISHED)
+                  .build());
+              }
+
+              if (reduceTaskId != null) {
+                driver.sendStatusUpdate(TaskStatus.newBuilder()
+                  .setTaskId(reduceTaskId)
+                  .setState(TaskState.TASK_FINISHED)
+                  .build());
+              }
+
+              // Give some time for the update to reach the slave.
+              try {
+                Thread.sleep(2000);
+              } catch (InterruptedException e) {
+                LOG.error("Failed to sleep TaskTracker thread", e);
+              }
+
+              // Stop the executor.
+              driver.stop();
+            } catch (Throwable t) {
+              LOG.fatal("Caught exception, committing suicide.", t);
+              driver.stop();
+              System.exit(1);
+            }
+          }
+        }.start();
       }
-    }.start();
+    }
 
     driver.sendStatusUpdate(TaskStatus.newBuilder()
         .setTaskId(task.getTaskId())
@@ -110,35 +149,50 @@ public class MesosExecutor implements Executor {
   @Override
   public void killTask(final ExecutorDriver driver, final TaskID taskId) {
     LOG.info("Killing task : " + taskId.getValue());
-    if (taskTracker != null) {
-      LOG.info("Revoking task tracker map/reduce slots");
 
-      // terminate the task launchers
-      try {
-        killLauncher(taskTracker, "mapLauncher");
-        killLauncher(taskTracker, "reduceLauncher");
-      } catch (ReflectiveOperationException e) {
-        LOG.fatal("Failed updating map slots due to error with reflection", e);
-      }
+    new Thread("TaskTrackerKillThread") {
+      @Override
+      public void run() {
 
-      // Configure the new slot counts on the task tracker
-      taskTracker.setMaxMapSlots(0);
-      taskTracker.setMaxReduceSlots(0);
+        // Commit suicide when no jobs are running
+        scheduleSuicideTimer();
 
-      // commit suicide when no jobs are running
-      scheduleSuicideTimer();
+        if (mapTaskId != null && taskId.equals(mapTaskId)) {
+          LOG.info("Revoking task tracker MAP slots");
 
-      // Send the TASK_FINISHED status
-      new Thread("TaskFinishedUpdate") {
-        @Override
-        public void run() {
+          // Revoke the slots from the task tracker
+          try {
+            revokeSlots(taskTracker, TaskType.MAP);
+          } catch (NoSuchFieldException | NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+            LOG.error("Caught exception revoking MAP slots: ", e);
+          }
+
           driver.sendStatusUpdate(TaskStatus.newBuilder()
               .setTaskId(taskId)
               .setState(TaskState.TASK_FINISHED)
               .build());
+
+          mapTaskId = null;
+
+        } else if (reduceTaskId != null && taskId.equals(reduceTaskId)) {
+          LOG.info("Revoking task tracker REDUCE slots");
+
+          // Revoke the slots from the task tracker
+          try {
+            revokeSlots(taskTracker, TaskType.REDUCE);
+          } catch (NoSuchFieldException | NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+            LOG.error("Caught exception revoking REDUCE slots: ", e);
+          }
+
+          driver.sendStatusUpdate(TaskStatus.newBuilder()
+              .setTaskId(taskId)
+              .setState(TaskState.TASK_FINISHED)
+              .build());
+
+          reduceTaskId = null;
         }
-      }.start();
-    }
+      }
+    }.start();
   }
 
   @Override
@@ -191,28 +245,54 @@ public class MesosExecutor implements Executor {
   }
 
   /**
-   * This is a hack to overcome lack of accessibility of the launcher. Will solicit feedback from Hadoop list.
-   * 
-   * @param tracker tracker with launcher we want to kill
-   * @param name name of the field containing the launcher
-   * @throws NoSuchFieldException
-   * @throws IllegalAccessException
+   * revokeSlots will take away all slots of the given task type from
+   * the running task tracker and as a precaution, fail any tasks that are
+   * running in those slots.
    */
-  private void killLauncher(TaskTracker tracker, String name) throws NoSuchFieldException, IllegalAccessException {
-    Field f = tracker.getClass().getDeclaredField(name);
-    f.setAccessible(true);
+  private void revokeSlots(TaskTracker tracker, TaskType type) throws NoSuchFieldException, NoSuchMethodException, IllegalAccessException, InvocationTargetException {
+    synchronized(tracker) {
+      if (type == TaskType.MAP) {
+        taskTracker.setMaxMapSlots(0);
+      } else if (type == TaskType.REDUCE) {
+        taskTracker.setMaxReduceSlots(0);
+      }
 
-    // Kill the current map task launcher
-    TaskTracker.TaskLauncher launcher = ((TaskTracker.TaskLauncher) f.get(tracker));
-    launcher.notifySlots();
-    launcher.interrupt();
+      // Nasty horrible hacks to get inside the task tracker and take over some
+      // of the state handling. Even if we were to subclass the task tracker
+      // these methods are all private so we wouldn't be able to use them.
+      Field f = tracker.getClass().getDeclaredField("tasks");
+      f.setAccessible(true);
+      Method m = tracker.getClass().getDeclaredMethod("purgeTask",
+        TaskTracker.TaskInProgress.class, boolean.class, boolean.class);
+      m.setAccessible(true);
+
+      // Here we're basically asking the task tracker to purge and kill any
+      // currently running tasks that match the given task type. This will
+      // clean up all various bits of state inside the task tracker and also
+      // terminate the relevant task runners (which ultimately are child JVMs).
+      Map<TaskAttemptID, TaskTracker.TaskInProgress> tasks =
+        (Map<TaskAttemptID, TaskTracker.TaskInProgress>) f.get(tracker);
+      for (TaskTracker.TaskInProgress tip : tasks.values()) {
+        Task task = tip.getTask();
+        if (type == TaskType.MAP && task instanceof MapTask) {
+          m.invoke(tip, false, false);
+        }
+      }
+    }
   }
 
   protected void scheduleSuicideTimer() {
+
+    if (suicideTimerScheduled) {
+      return;
+    }
+
+    suicideTimerScheduled = true;
     timerScheduler.schedule(new Runnable() {
       @Override
       public void run() {
         if (taskTracker == null) {
+          suicideTimerScheduled = false;
           return;
         }
 

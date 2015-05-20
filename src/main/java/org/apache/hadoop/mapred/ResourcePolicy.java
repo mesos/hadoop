@@ -331,7 +331,7 @@ public abstract class ResourcePolicy {
         ExecutorInfo executor = ExecutorInfo
             .newBuilder()
             .setExecutorId(ExecutorID.newBuilder().setValue(
-                "executor_" + taskId.getValue()))
+                "Executor_" + taskId.getValue()))
             .setName("Hadoop TaskTracker")
             .setSource(taskId.getValue())
             .addResources(
@@ -370,51 +370,34 @@ public abstract class ResourcePolicy {
           continue;
         }
 
-        // Create the TaskTracker TaskInfo
-        TaskInfo trackerTaskInfo = TaskInfo
-            .newBuilder()
-            .setName(taskId.getValue())
-            .setTaskId(taskId)
-            .setSlaveId(offer.getSlaveId())
-            .addResources(
-                Resource
-                    .newBuilder()
-                    .setName("ports")
-                    .setType(Value.Type.RANGES)
-                    .setRole(portsRole)
-                    .setRanges(
-                        Value.Ranges
-                            .newBuilder()
-                            .addRange(Value.Range.newBuilder()
-                                .setBegin(httpAddress.getPort())
-                                .setEnd(httpAddress.getPort()))
-                            .addRange(Value.Range.newBuilder()
-                                .setBegin(reportAddress.getPort())
-                                .setEnd(reportAddress.getPort()))))
-            .addResources(
-                Resource
-                    .newBuilder()
-                    .setName("cpus")
-                    .setType(Value.Type.SCALAR)
-                    .setRole(cpuRole)
-                    .setScalar(Value.Scalar.newBuilder().setValue(taskCpus - containerCpus)))
-            .addResources(
-                Resource
-                    .newBuilder()
-                    .setName("mem")
-                    .setType(Value.Type.SCALAR)
-                    .setRole(memRole)
-                    .setScalar(Value.Scalar.newBuilder().setValue(taskMem - containerCpus)))
-            .setData(taskData)
-            .setExecutor(executor)
-            .build();
+        List<TaskInfo> tasks = new ArrayList();
+        TaskID mapTaskId = null;
+        TaskID reduceTaskId = null;
+
+        if (mapSlots > 0) {
+          TaskInfo mapTask = buildTaskInfo(executor, taskId.getValue() + "_Map", offer,
+                                           httpAddress.getPort(), reportAddress.getPort(), mapSlots, taskData,
+                                           portsRole, cpuRole, memRole);
+          
+          mapTaskId = mapTask.getTaskId();
+          tasks.add(mapTask);
+        }
+
+        if (reduceSlots > 0) {
+          TaskInfo reduceTask = buildTaskInfo(executor, taskId.getValue() + "_Reduce", offer,
+                                              httpAddress.getPort(), reportAddress.getPort(), reduceSlots, taskData,
+                                              portsRole, cpuRole, memRole);
+
+          reduceTaskId = reduceTask.getTaskId();
+          tasks.add(reduceTask);
+        }
 
         // Add this tracker to Mesos tasks.
-        scheduler.mesosTrackers.put(httpAddress, new MesosTracker(httpAddress, taskId,
-            mapSlots, reduceSlots, scheduler));
+        scheduler.mesosTrackers.put(httpAddress, new MesosTracker(httpAddress,
+            mapTaskId, reduceTaskId, mapSlots, reduceSlots, scheduler));
 
         // Launch the task
-        schedulerDriver.launchTasks(Arrays.asList(offer.getId()), Arrays.asList(trackerTaskInfo));
+        schedulerDriver.launchTasks(Arrays.asList(offer.getId()), tasks);
 
         neededMapSlots -= mapSlots;
         neededReduceSlots -= reduceSlots;
@@ -429,6 +412,51 @@ public abstract class ResourcePolicy {
             + "remaining");
       }
     }
+  }
+
+  protected TaskInfo buildTaskInfo(ExecutorInfo executor, String taskId, Offer offer,
+                                   Integer httpPort, Integer reportPort, long slots, ByteString taskData,
+                                   String portsRole, String cpuRole, String memRole) {
+
+    TaskInfo taskInfo = TaskInfo
+      .newBuilder()
+      .setName(taskId)
+      .setTaskId(TaskID.newBuilder().setValue(taskId))
+      .setSlaveId(offer.getSlaveId())
+      .addResources(
+          Resource
+              .newBuilder()
+              .setName("ports")
+              .setType(Value.Type.RANGES)
+              .setRole(portsRole)
+              .setRanges(
+                  Value.Ranges
+                      .newBuilder()
+                      .addRange(Value.Range.newBuilder()
+                          .setBegin(httpPort)
+                          .setEnd(httpPort))
+                      .addRange(Value.Range.newBuilder()
+                          .setBegin(reportPort)
+                          .setEnd(reportPort))))
+      .addResources(
+          Resource
+              .newBuilder()
+              .setName("cpus")
+              .setType(Value.Type.SCALAR)
+              .setRole(cpuRole)
+              .setScalar(Value.Scalar.newBuilder().setValue(slotCpus * slots)))
+      .addResources(
+          Resource
+              .newBuilder()
+              .setName("mem")
+              .setType(Value.Type.SCALAR)
+              .setRole(memRole)
+              .setScalar(Value.Scalar.newBuilder().setValue(slotMem * slots)))
+      .setData(taskData)
+      .setExecutor(executor)
+      .build();
+
+      return taskInfo;
   }
 
   public void computeNeededSlots(List<JobInProgress> jobsInProgress,

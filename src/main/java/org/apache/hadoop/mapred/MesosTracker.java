@@ -3,6 +3,7 @@ package org.apache.hadoop.mapred;
 import org.apache.commons.httpclient.HttpHost;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.mapreduce.TaskType;
 import org.apache.mesos.Protos.TaskID;
 
 import java.util.Collection;
@@ -18,23 +19,27 @@ import java.util.concurrent.TimeUnit;
 public class MesosTracker {
   public static final Log LOG = LogFactory.getLog(MesosScheduler.class);
   public volatile HttpHost host;
-  public TaskID taskId;
+  public TaskID mapTaskId;
+  public TaskID reduceTaskId;
   public long mapSlots;
   public long reduceSlots;
-  public volatile long idleCounter = 0;
+  // Number of idle check cycles all map slots are idle
+  public volatile long idleMapCounter = 0;
+  // Number of idle check cycles all reduce slots are idle
+  public volatile long idleReduceCounter = 0;
   public volatile long idleCheckInterval = 0;
   public volatile long idleCheckMax = 0;
   public volatile boolean active = false; // Set once tracked by the JobTracker.
-  public volatile boolean stopped = false;
   public volatile MesosScheduler scheduler;
   // Tracks Hadoop jobs running on the tracker.
   public Set<JobID> jobs = Collections.newSetFromMap(new ConcurrentHashMap<JobID, Boolean>());
   public com.codahale.metrics.Timer.Context context;
 
-  public MesosTracker(HttpHost host, TaskID taskId, long mapSlots,
-                      long reduceSlots, MesosScheduler scheduler) {
+  public MesosTracker(HttpHost host, TaskID mapTaskId, TaskID reduceTaskId,
+                      long mapSlots, long reduceSlots, MesosScheduler scheduler) {
     this.host = host;
-    this.taskId = taskId;
+    this.mapTaskId = mapTaskId;
+    this.reduceTaskId = reduceTaskId;
     this.mapSlots = mapSlots;
     this.reduceSlots = reduceSlots;
     this.scheduler = scheduler;
@@ -52,6 +57,16 @@ public class MesosTracker {
     if (this.idleCheckInterval > 0 && this.idleCheckMax > 0) {
       scheduleIdleCheck();
     }
+  }
+
+  public TaskID getTaskId(TaskType type) {
+    if (type == TaskType.MAP) {
+      return mapTaskId;
+    } else if (type == TaskType.REDUCE) {
+      return reduceTaskId;
+    }
+
+    return null;
   }
 
   protected void scheduleStartupTimer() {
@@ -83,8 +98,14 @@ public class MesosTracker {
         if (MesosTracker.this.scheduler.metrics != null) {
           MesosTracker.this.scheduler.metrics.launchTimeout.mark();
         }
+
         LOG.warn("Tracker " + MesosTracker.this.host + " failed to launch within " +
             MesosScheduler.LAUNCH_TIMEOUT_MS / 1000 + " seconds, killing it");
+
+        // Kill the MAP and REDUCE slot tasks. This doesn't directly kill the
+        // task tracker but it will result in the task tracker receiving no
+        // tasks and ultimately lead to it's death. Best case the task is broken
+        // and it will never come up on Mesos.
         MesosTracker.this.scheduler.killTracker(MesosTracker.this);
       }
     }, MesosScheduler.LAUNCH_TIMEOUT_MS, TimeUnit.MILLISECONDS);
@@ -120,11 +141,6 @@ public class MesosTracker {
       public void run() {
         synchronized (MesosTracker.this.scheduler) {
 
-          // Stop the idle check timer if the scheduler has been stopped.
-          if (MesosTracker.this.stopped) {
-            return;
-          }
-
           // If the task tracker isn't active, wait until it is active.
           // If the task tracker has no jobs assigned to it, ignore it. We're
           // only interested in a tracker that has jobs but isn't using any of
@@ -134,38 +150,13 @@ public class MesosTracker {
             return;
           }
 
-          // If the tracker has been idle for too long, kill it.
-          if (MesosTracker.this.idleCounter >= MesosTracker.this.idleCheckMax) {
-            LOG.info("Killing idle tasktracker " + MesosTracker.this.host);
-            MesosTracker.this.scheduler.killTracker(MesosTracker.this);
-            scheduleIdleCheck();
-            return;
+          // Perform the idle checks for map and reduce slots
+          if (MesosTracker.this.mapSlots > 0) {
+            idleMapCheck();
           }
 
-          // Calculate the number of map and reduce slots that are currently
-          // occupied on the task tracker.
-          long occupiedMapSlots =  0;
-          long occupiedReduceSlots = 0;
-          Collection<TaskTrackerStatus> taskTrackers = scheduler.jobTracker.taskTrackers();
-          for (TaskTrackerStatus status : taskTrackers) {
-            HttpHost host = new HttpHost(status.getHost(), status.getHttpPort());
-            if (host.toString().equals(MesosTracker.this.host.toString())) {
-              occupiedMapSlots += status.countOccupiedMapSlots();
-              occupiedReduceSlots += status.countOccupiedMapSlots();
-              break;
-            }
-          }
-
-          // If there are zero slots occupied (either map OR reduce slots) then
-          // we class the tracker as idle.
-          if (occupiedMapSlots == 0 && occupiedReduceSlots == 0) {
-            LOG.info("TaskTracker appears idle right now: " + MesosTracker.this.host);
-            MesosTracker.this.idleCounter += 1;
-          } else {
-            if (MesosTracker.this.idleCounter > 0) {
-              LOG.info("TaskTracker is no longer idle: " + MesosTracker.this.host);
-            }
-            MesosTracker.this.idleCounter = 0;
+          if (MesosTracker.this.reduceSlots > 0) {
+            idleReduceCheck();
           }
 
           scheduleIdleCheck();
@@ -174,11 +165,57 @@ public class MesosTracker {
     }, MesosTracker.this.idleCheckInterval, TimeUnit.SECONDS);
   }
 
-  public void stop() {
-    active = false;
-    stopped = true;
-    if (context != null) {
-      context.stop();
+  protected void idleMapCheck() {
+
+    // If the map slots has been idle for too long, kill them.
+    if (this.idleMapCounter >= MesosTracker.this.idleCheckMax) {
+      LOG.info("Killing MAP slots on idle Task Tracker " + MesosTracker.this.host);
+      MesosTracker.this.scheduler.killTrackerSlots(MesosTracker.this, TaskType.MAP);
+      return;
+    }
+
+    long occupiedMapSlots =  0;
+    Collection<TaskTrackerStatus> taskTrackers = scheduler.jobTracker.taskTrackers();
+    for (TaskTrackerStatus status : taskTrackers) {
+      HttpHost host = new HttpHost(status.getHost(), status.getHttpPort());
+      if (host.toString().equals(MesosTracker.this.host.toString())) {
+        occupiedMapSlots += status.countOccupiedMapSlots();
+        break;
+      }
+    }
+
+    if (occupiedMapSlots == 0) {
+      LOG.info("TaskTracker MAP slots appear idle right now: " + MesosTracker.this.host);
+      MesosTracker.this.idleMapCounter += 1;
+    } else {
+      MesosTracker.this.idleMapCounter = 0;
+    }
+  }
+
+  protected void idleReduceCheck() {
+
+    // If the reduce slots has been idle for too long, kill them.
+    if (this.idleReduceCounter >= MesosTracker.this.idleCheckMax) {
+      LOG.info("Killing REDUCE slots on idle Task Tracker " + MesosTracker.this.host);
+      MesosTracker.this.scheduler.killTrackerSlots(MesosTracker.this, TaskType.REDUCE);
+      return;
+    }
+
+    long occupiedReduceSlots =  0;
+    Collection<TaskTrackerStatus> taskTrackers = scheduler.jobTracker.taskTrackers();
+    for (TaskTrackerStatus status : taskTrackers) {
+      HttpHost host = new HttpHost(status.getHost(), status.getHttpPort());
+      if (host.toString().equals(MesosTracker.this.host.toString())) {
+        occupiedReduceSlots += status.countOccupiedReduceSlots();
+        break;
+      }
+    }
+
+    if (occupiedReduceSlots == 0) {
+      LOG.info("TaskTracker REDUCE slots appear idle right now: " + MesosTracker.this.host);
+      MesosTracker.this.idleReduceCounter += 1;
+    } else {
+      MesosTracker.this.idleReduceCounter = 0;
     }
   }
 }

@@ -7,9 +7,11 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.server.jobtracker.TaskTracker;
+import org.apache.hadoop.mapreduce.TaskType;
 import org.apache.mesos.MesosSchedulerDriver;
 import org.apache.mesos.Protos;
 import org.apache.mesos.Protos.*;
+import org.apache.mesos.Protos.TaskID;
 import org.apache.mesos.Scheduler;
 import org.apache.mesos.SchedulerDriver;
 import org.apache.mesos.hadoop.Metrics;
@@ -111,7 +113,7 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
         for (String hostname : flakyTrackers) {
           for (MesosTracker mesosTracker : mesosTrackers.values()) {
             if (mesosTracker.host.getHostName().startsWith(hostname)) {
-              LOG.info("Killing Mesos task: " + mesosTracker.taskId + " on host " + mesosTracker.host + " because it has been marked as flaky");
+              LOG.info("Killing tracker on host " + mesosTracker.host + " because it has been marked as flaky");
               if (metrics != null) {
                 metrics.flakyTrackerKilledMeter.mark();
               }
@@ -141,7 +143,7 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
 
           // If the TaskTracker doesn't have any running job tasks assigned, kill it.
           if (mesosTracker.jobs.isEmpty() && mesosTracker.active) {
-            LOG.info("Killing Mesos task: " + mesosTracker.taskId + " on host " + mesosTracker.host + " because it is no longer needed");
+            LOG.info("Killing tracker on host " + mesosTracker.host + " because it is no longer needed");
 
             killTracker(mesosTracker);
           }
@@ -196,18 +198,6 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
       case TASK_FAILED:
       case TASK_KILLED:
       case TASK_LOST:
-        // Make a copy to iterate over keys and delete values.
-        Set<HttpHost> trackers = new HashSet<>(mesosTrackers.keySet());
-
-        // Remove the task from the map.
-        for (HttpHost tracker : trackers) {
-          if (mesosTrackers.get(tracker).taskId.equals(taskStatus.getTaskId())) {
-            LOG.info("Removing terminated TaskTracker: " + tracker);
-            mesosTrackers.get(tracker).stop();
-            mesosTrackers.remove(tracker);
-          }
-        }
-        break;
       case TASK_STAGING:
       case TASK_STARTING:
       case TASK_RUNNING:
@@ -243,6 +233,8 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   @Override
   public synchronized void executorLost(SchedulerDriver schedulerDriver, ExecutorID executorID, SlaveID slaveID, int status) {
     LOG.warn("Executor " + executorID.getValue() + " lost with status " + status + " on slave " + slaveID);
+
+    // TODO(tarnfeld): If the executor is lost what do we do?
   }
 
   @Override
@@ -260,19 +252,28 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     if (tasks != null) {
       HttpHost tracker = new HttpHost(taskTracker.getStatus().getHost(), taskTracker.getStatus().getHttpPort());
       MesosTracker mesosTracker = mesosTrackers.get(tracker);
-      synchronized (this) {
-        if (mesosTracker != null) {
-          if (mesosTracker.stopped) {
-            // Make sure we're not asked to assign tasks to any task trackers that have
-            // been stopped. This could happen while the task tracker has not been
-            // removed from the cluster e.g still in the heartbeat timeout period.
-            LOG.info("Asked to assign tasks to stopped tracker " + tracker + ".");
-            return null;
-          } else {
-            // Keep track of which TaskTracker contains which tasks.
-            for (Task task : tasks) {
-              mesosTracker.jobs.add(task.getJobID());
+      if (mesosTracker != null) {
+        synchronized (this) {
+          for (Iterator<Task> iterator = tasks.iterator(); iterator.hasNext();) {
+
+            // Throw away any task types that don't match up with the current known
+            // slot allocation of the tracker. We do this here because when we change
+            // the slot allocation of a running Task Tracker it can take time for
+            // this information to propagate around the system and we can preemptively
+            // avoid scheduling tasks to task trackers we know not to have capacity.
+            Task task = iterator.next();
+            if (task instanceof MapTask && mesosTracker.mapSlots == 0) {
+              LOG.debug("Removed map task from TT assignment due to mismatching slots");
+              iterator.remove();
+              continue;
+            } else if (task instanceof ReduceTask && mesosTracker.reduceSlots == 0) {
+              LOG.debug("Removed reduce task from TT assignment due to mismatching slots");
+              iterator.remove();
+              continue;
             }
+
+            // Keep track of which TaskTracker contains which tasks.
+            mesosTracker.jobs.add(task.getJobID());
           }
         }
       }
@@ -321,15 +322,27 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
   }
 
   public void killTracker(MesosTracker tracker) {
+    killTrackerSlots(tracker, TaskType.MAP);
+    killTrackerSlots(tracker, TaskType.REDUCE);
+  }
+
+  // killTrackerSlots will ask the given MesosTraker to revoke
+  // the allocated task slots, for the given type of slot (MAP/REDUCE).
+  public void killTrackerSlots(MesosTracker tracker, TaskType type) {
     if (metrics != null) {
       metrics.killMeter.mark();
     }
-    synchronized (this) {
-      driver.killTask(tracker.taskId);
 
-      tracker.stop();
-      if (mesosTrackers.get(tracker.host) == tracker) {
-        mesosTrackers.remove(tracker.host);
+    synchronized (this) {
+      TaskID taskId = tracker.getTaskId(type);
+      if (taskId != null) {
+        driver.killTask(taskId);
+
+        if (type == TaskType.MAP) {
+          tracker.mapSlots = 0;
+        } else if (type == TaskType.REDUCE) {
+          tracker.reduceSlots = 0;
+        }
       }
     }
   }
