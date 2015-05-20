@@ -326,10 +326,11 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     }
     synchronized (this) {
       driver.killTask(tracker.taskId);
-    }
-    tracker.stop();
-    if (mesosTrackers.get(tracker.host) == tracker) {
-      mesosTrackers.remove(tracker.host);
+
+      tracker.stop();
+      if (mesosTrackers.get(tracker.host) == tracker) {
+        mesosTrackers.remove(tracker.host);
+      }
     }
   }
 
