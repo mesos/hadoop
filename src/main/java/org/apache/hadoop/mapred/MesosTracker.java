@@ -139,28 +139,25 @@ public class MesosTracker {
     scheduler.scheduleTimer(new Runnable() {
       @Override
       public void run() {
-        synchronized (MesosTracker.this.scheduler) {
-
-          // If the task tracker isn't active, wait until it is active.
-          // If the task tracker has no jobs assigned to it, ignore it. We're
-          // only interested in a tracker that has jobs but isn't using any of
-          // the slots.
-          if (!MesosTracker.this.active || MesosTracker.this.jobs.isEmpty()) {
-            scheduleIdleCheck();
-            return;
-          }
-
-          // Perform the idle checks for map and reduce slots
-          if (MesosTracker.this.mapSlots > 0) {
-            idleMapCheck();
-          }
-
-          if (MesosTracker.this.reduceSlots > 0) {
-            idleReduceCheck();
-          }
-
+        // If the task tracker isn't active, wait until it is active.
+        // If the task tracker has no jobs assigned to it, ignore it. We're
+        // only interested in a tracker that has jobs but isn't using any of
+        // the slots.
+        if (!MesosTracker.this.active || MesosTracker.this.jobs.isEmpty()) {
           scheduleIdleCheck();
+          return;
         }
+
+        // Perform the idle checks for map and reduce slots
+        if (MesosTracker.this.mapSlots > 0) {
+          idleMapCheck();
+        }
+
+        if (MesosTracker.this.reduceSlots > 0) {
+          idleReduceCheck();
+        }
+
+        scheduleIdleCheck();
       }
     }, MesosTracker.this.idleCheckInterval, TimeUnit.SECONDS);
   }
