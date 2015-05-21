@@ -1,6 +1,12 @@
 
 package org.apache.hadoop.mapred;
 
+import java.util.List;
+import java.util.ArrayList;
+
+import java.lang.NoSuchMethodException;
+import java.lang.reflect.Method;
+
 import org.apache.hadoop.mapreduce.server.jobtracker.TaskTracker;
 
 /**
@@ -8,8 +14,17 @@ import org.apache.hadoop.mapreduce.server.jobtracker.TaskTracker;
  */
 public class ResourcePolicyAssigned extends ResourcePolicy {
 
-  public ResourcePolicyAssigned(MesosScheduler scheduler) {
+  Method canLaunchSetupTask;
+  Method canLaunchCleanupTask;
+
+  public ResourcePolicyAssigned(MesosScheduler scheduler) throws NoSuchMethodException {
     super(scheduler);
+
+    canLaunchSetupTask = JobInProgress.class.getDeclaredMethod("canLaunchSetupTask");
+    canLaunchSetupTask.setAccessible(true);
+
+    canLaunchCleanupTask = JobInProgress.class.getDeclaredMethod("canLaunchJobCleanupTask");
+    canLaunchCleanupTask.setAccessible(true);
   }
 
   /**
@@ -38,7 +53,7 @@ public class ResourcePolicyAssigned extends ResourcePolicy {
     // Construct a fake TaskTracker object to trick the scheduler
     TaskTracker taskTracker = new TaskTracker("mesos.scheduler.facade");
     taskTracker.setStatus(new TaskTrackerStatus(
-      "mesos.scheduler.facade", null, null, 0, null, 0, 0, slots, slots
+      "mesos.scheduler.facade", null, null, 0, new ArrayList<TaskStatus>(), 0, 0, slots, slots
     ));
 
     // Ask the scheduler what it would assign to these slots
@@ -46,19 +61,41 @@ public class ResourcePolicyAssigned extends ResourcePolicy {
     long assignedReduces = 0;
 
     try {
-      for (Task task : scheduler.assignTasks(taskTracker)) {
-        if (task.isMapOrReduce()) {
-          if (!task.isMapTask()) {
-            assignedReduces++;
-            continue;
+      // Look for any jobs that are in the PREP phase and
+      for (JobStatus status : scheduler.jobTracker.jobsToComplete()) {
+        JobInProgress job = scheduler.jobTracker.getJob(status.getJobID());
+        if ((boolean) canLaunchSetupTask.invoke(job) || (boolean) canLaunchCleanupTask.invoke(job)) {
+          assignedMaps ++;
+        }
+      }
+
+      TaskScheduler taskScheduler = scheduler.getTaskScheduler();
+      if (taskScheduler != null) {
+        List<Task> assignedTasks = taskScheduler.assignTasks(taskTracker);
+        if (assignedTasks != null) {
+          for (Task task : assignedTasks) {
+            if (task.isMapOrReduce()) {
+              if (!task.isMapTask()) {
+                assignedReduces++;
+                continue;
+              }
+            }
+            assignedMaps++;
           }
         }
-        assignedMaps++;
       }
     } catch (Exception e) {
       LOG.warn("Caught exception mocking assignTasks(): ", e);
       return false;
     }
+
+    if ((assignedMaps + assignedReduces) <= 0) {
+
+      LOG.info("Scheduler assigned zero tasks (offered " + slots + " MAP and " + slots + " REDUCE)");
+      return false;
+    }
+
+    LOG.info("Scheduler assigned " + assignedMaps + " MAP tasks and " + assignedReduces + " REDUCE tasks");
 
     // Is the number of slots we need sufficiently small? If so, we can
     // allocate exactly the number we need.

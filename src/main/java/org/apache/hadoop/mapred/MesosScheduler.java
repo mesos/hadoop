@@ -291,6 +291,10 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     return taskScheduler.getJobs(queueName);
   }
 
+  public TaskScheduler getTaskScheduler() {
+    return taskScheduler;
+  }
+
   /**
    * For some reason, pendingMaps() and pendingReduces() doesn't return the values we expect. We observed negative
    * values, which may be related to https://issues.apache.org/jira/browse/MAPREDUCE-1238. Below is the algorithm
