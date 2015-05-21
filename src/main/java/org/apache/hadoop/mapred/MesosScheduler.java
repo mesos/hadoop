@@ -410,10 +410,17 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
 
     policyIsFixed = conf.getBoolean("mapred.mesos.scheduler.policy.fixed", policyIsFixed);
 
-    if (policyIsFixed) {
-      policy = new ResourcePolicyFixed(this);
-    } else {
-      policy = new ResourcePolicyVariable(this);
+    // if (policyIsFixed) {
+    //   policy = new ResourcePolicyFixed(this);
+    // } else {
+    //   policy = new ResourcePolicyVariable(this);
+    // }
+
+    try {
+      policy = new ResourcePolicyAssigned(this);
+    } catch (Exception e) {
+      LOG.fatal("Failed to init resource policy", e);
+      System.exit(1);
     }
 
     enableMetrics = conf.getBoolean("mapred.mesos.metrics.enabled", enableMetrics);
