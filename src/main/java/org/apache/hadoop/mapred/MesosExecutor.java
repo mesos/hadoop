@@ -153,7 +153,10 @@ public class MesosExecutor implements Executor {
       public void run() {
 
         // Commit suicide when no jobs are running
-        scheduleSuicideTimer();
+        if (!suicideTimerScheduled) {
+          scheduleSuicideTimer();
+          suicideTimerScheduled = true;
+        }
 
         if (mapTaskId != null && taskId.equals(mapTaskId)) {
           LOG.info("Revoking task tracker MAP slots");
@@ -281,12 +284,6 @@ public class MesosExecutor implements Executor {
   }
 
   protected void scheduleSuicideTimer() {
-
-    if (suicideTimerScheduled) {
-      return;
-    }
-
-    suicideTimerScheduled = true;
     timerScheduler.schedule(new Runnable() {
       @Override
       public void run() {
