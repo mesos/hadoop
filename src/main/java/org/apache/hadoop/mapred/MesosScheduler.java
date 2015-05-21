@@ -333,16 +333,14 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
       metrics.killMeter.mark();
     }
 
-    synchronized (this) {
-      TaskID taskId = tracker.getTaskId(type);
-      if (taskId != null) {
-        driver.killTask(taskId);
+    TaskID taskId = tracker.getTaskId(type);
+    if (taskId != null) {
+      driver.killTask(taskId);
 
-        if (type == TaskType.MAP) {
-          tracker.mapSlots = 0;
-        } else if (type == TaskType.REDUCE) {
-          tracker.reduceSlots = 0;
-        }
+      if (type == TaskType.MAP) {
+        tracker.mapSlots = 0;
+      } else if (type == TaskType.REDUCE) {
+        tracker.reduceSlots = 0;
       }
     }
   }
