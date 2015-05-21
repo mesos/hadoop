@@ -16,11 +16,9 @@ import java.util.Map;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.lang.reflect.InvocationTargetException;
 
 import java.lang.IllegalAccessException;
 import java.lang.NoSuchFieldException;
-import java.lang.NoSuchMethodException;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
@@ -163,7 +161,7 @@ public class MesosExecutor implements Executor {
           // Revoke the slots from the task tracker
           try {
             revokeSlots(taskTracker, TaskType.MAP);
-          } catch (NoSuchFieldException | NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+          } catch (NoSuchFieldException | IllegalAccessException e) {
             LOG.error("Caught exception revoking MAP slots: ", e);
           }
 
@@ -180,7 +178,7 @@ public class MesosExecutor implements Executor {
           // Revoke the slots from the task tracker
           try {
             revokeSlots(taskTracker, TaskType.REDUCE);
-          } catch (NoSuchFieldException | NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+          } catch (NoSuchFieldException | IllegalAccessException e) {
             LOG.error("Caught exception revoking REDUCE slots: ", e);
           }
 
@@ -249,35 +247,36 @@ public class MesosExecutor implements Executor {
    * the running task tracker and as a precaution, fail any tasks that are
    * running in those slots.
    */
-  private void revokeSlots(TaskTracker tracker, TaskType type) throws NoSuchFieldException, NoSuchMethodException, IllegalAccessException, InvocationTargetException {
+  private void revokeSlots(TaskTracker tracker, TaskType type) throws NoSuchFieldException, IllegalAccessException {
     synchronized(tracker) {
+
+      String launcherProp = "";
+      int maxSlots = 0;
+
       if (type == TaskType.MAP) {
         taskTracker.setMaxMapSlots(0);
+        launcherProp = "mapLauncher";
+        maxSlots = tracker.getMaxCurrentMapTasks();
       } else if (type == TaskType.REDUCE) {
         taskTracker.setMaxReduceSlots(0);
+        launcherProp = "reduceLauncher";
+        maxSlots = tracker.getMaxCurrentReduceTasks();
       }
 
       // Nasty horrible hacks to get inside the task tracker and take over some
       // of the state handling. Even if we were to subclass the task tracker
       // these methods are all private so we wouldn't be able to use them.
-      Field f = tracker.getClass().getDeclaredField("tasks");
+      Field f = tracker.getClass().getDeclaredField(launcherProp);
       f.setAccessible(true);
-      Method m = tracker.getClass().getDeclaredMethod("purgeTask",
-        TaskTracker.TaskInProgress.class, boolean.class, boolean.class);
-      m.setAccessible(true);
 
-      // Here we're basically asking the task tracker to purge and kill any
-      // currently running tasks that match the given task type. This will
-      // clean up all various bits of state inside the task tracker and also
-      // terminate the relevant task runners (which ultimately are child JVMs).
-      Map<TaskAttemptID, TaskTracker.TaskInProgress> tasks =
-        (Map<TaskAttemptID, TaskTracker.TaskInProgress>) f.get(tracker);
-      for (TaskTracker.TaskInProgress tip : tasks.values()) {
-        Task task = tip.getTask();
-        if (type == TaskType.MAP && task instanceof MapTask) {
-          m.invoke(tip, false, false);
-        }
-      }
+      TaskTracker.TaskLauncher launcher =
+        (TaskTracker.TaskLauncher) f.get(tracker);
+
+      // Here we add a negative amount of slots (bringing the launcher to zero)
+      // which causes the launcher to clean up any tasks in the launch queue
+      // and then we kill the thread to stop it doing anything else.
+      launcher.addFreeSlots(-maxSlots);
+      launcher.interrupt();
     }
   }
 
