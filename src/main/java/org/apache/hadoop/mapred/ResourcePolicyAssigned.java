@@ -1,8 +1,13 @@
 
 package org.apache.hadoop.mapred;
 
+import java.io.IOException;
+
 import java.util.List;
+import java.util.Set;
+import java.util.Collection;
 import java.util.ArrayList;
+import java.util.HashSet;
 
 import java.lang.NoSuchMethodException;
 import java.lang.reflect.Method;
@@ -16,6 +21,89 @@ public class ResourcePolicyAssigned extends ResourcePolicy {
 
   Method canLaunchSetupTask;
   Method canLaunchCleanupTask;
+
+  class MockTaskTrackerManager implements TaskTrackerManager {
+    List<TaskTrackerStatus> trackers;
+    TaskTrackerStatus mockTracker;
+    Set<String> uniqueHosts = new HashSet<String>();
+    JobTracker manager;
+
+    public MockTaskTrackerManager(TaskTrackerStatus mockTracker,
+                                  JobTracker manager) {
+
+      this.manager = manager;
+      this.mockTracker = mockTracker;
+
+      trackers = new ArrayList<TaskTrackerStatus>();
+      trackers.add(mockTracker);
+      uniqueHosts.add(mockTracker.getHost());
+
+      for (TaskTrackerStatus tt : manager.taskTrackers()) {
+        trackers.add(tt);
+        uniqueHosts.add(tt.getHost());
+      }
+    }
+
+    public Collection<TaskTrackerStatus> taskTrackers() {
+      return trackers;
+    }
+
+    public int getNumberOfUniqueHosts() {
+      return uniqueHosts.size();
+    }
+
+    public ClusterStatus getClusterStatus() {
+      ClusterStatus originalStatus = manager.getClusterStatus();
+
+      return new ClusterStatus(trackers.size() -
+            manager.getBlacklistedTrackerCount(),
+            manager.getBlacklistedTrackerCount(),
+            originalStatus.getTTExpiryInterval(),
+            originalStatus.getMapTasks(),
+            originalStatus.getReduceTasks(),
+            originalStatus.getMaxMapTasks() + mockTracker.getMaxMapSlots(),
+            originalStatus.getMaxReduceTasks() + mockTracker.getMaxReduceSlots(),
+            originalStatus.getJobTrackerStatus());
+    }
+
+    public QueueManager getQueueManager() {
+      return manager.getQueueManager();
+    }
+
+    public int getNextHeartbeatInterval() {
+      throw new RuntimeException("NOPE");
+    }
+
+    public void addJobInProgressListener(JobInProgressListener listener) {
+      throw new RuntimeException("NOPE");
+    }
+
+    public void removeJobInProgressListener(JobInProgressListener listener) {
+      throw new RuntimeException("NOPE");
+    }
+
+    public void killJob(JobID jobid)
+        throws IOException {
+      throw new RuntimeException("NOPE");
+    }
+
+    public JobInProgress getJob(JobID jobid) {
+      throw new RuntimeException("NOPE");
+    }
+
+    public void initJob(JobInProgress job) {
+      throw new RuntimeException("NOPE");
+    }
+
+    public void failJob(JobInProgress job) {
+      throw new RuntimeException("NOPE");
+    }
+
+    public boolean killTask(TaskAttemptID taskid, boolean shouldFail)
+        throws IOException {
+      throw new RuntimeException("NOPE");
+    }
+  }
 
   public ResourcePolicyAssigned(MesosScheduler scheduler) throws NoSuchMethodException {
     super(scheduler);
@@ -51,10 +139,16 @@ public class ResourcePolicyAssigned extends ResourcePolicy {
     }
 
     // Construct a fake TaskTracker object to trick the scheduler
-    TaskTracker taskTracker = new TaskTracker("mesos.scheduler.facade");
-    taskTracker.setStatus(new TaskTrackerStatus(
-      "mesos.scheduler.facade", null, null, 0, new ArrayList<TaskStatus>(), 0, 0, slots, slots
-    ));
+    TaskTrackerStatus mockStatus = new TaskTrackerStatus(
+      "mesos.scheduler.facade", "http", "foo.bar.baz", 0, new ArrayList<TaskStatus>(), 0, 0, slots, slots
+    );
+
+    // TODO: Comment this properly
+    JobTracker jobTracker = scheduler.getJobTracker();
+    MockTaskTrackerManager mockManager = new MockTaskTrackerManager(mockStatus, jobTracker);
+
+    TaskScheduler taskScheduler = scheduler.getTaskScheduler();
+    taskScheduler.setTaskTrackerManager(mockManager);
 
     // Ask the scheduler what it would assign to these slots
     long assignedMaps = 0;
@@ -69,28 +163,30 @@ public class ResourcePolicyAssigned extends ResourcePolicy {
         }
       }
 
-      TaskScheduler taskScheduler = scheduler.getTaskScheduler();
-      if (taskScheduler != null) {
-        List<Task> assignedTasks = taskScheduler.assignTasks(taskTracker);
-        if (assignedTasks != null) {
-          for (Task task : assignedTasks) {
-            if (task.isMapOrReduce()) {
-              if (!task.isMapTask()) {
-                assignedReduces++;
-                continue;
-              }
+      TaskTracker taskTracker = new TaskTracker("mesos.scheduler.facade");
+      taskTracker.setStatus(mockStatus);
+
+      List<Task> assignedTasks = taskScheduler.assignTasks(taskTracker);
+      if (assignedTasks != null) {
+        for (Task task : assignedTasks) {
+          if (task.isMapOrReduce()) {
+            if (!task.isMapTask()) {
+              assignedReduces++;
+              continue;
             }
-            assignedMaps++;
           }
+          assignedMaps++;
         }
       }
     } catch (Exception e) {
       LOG.warn("Caught exception mocking assignTasks(): ", e);
-      return false;
+      assignedMaps = 0;
+      assignedReduces = 0;
+    } finally {
+      taskScheduler.setTaskTrackerManager(jobTracker);
     }
 
     if ((assignedMaps + assignedReduces) <= 0) {
-
       LOG.info("Scheduler assigned zero tasks (offered " + slots + " MAP and " + slots + " REDUCE)");
       return false;
     }
