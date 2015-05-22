@@ -291,6 +291,14 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
     return taskScheduler.getJobs(queueName);
   }
 
+  public TaskScheduler getTaskScheduler() {
+    return taskScheduler;
+  }
+
+  public JobTracker getJobTracker() {
+    return jobTracker;
+  }
+
   /**
    * For some reason, pendingMaps() and pendingReduces() doesn't return the values we expect. We observed negative
    * values, which may be related to https://issues.apache.org/jira/browse/MAPREDUCE-1238. Below is the algorithm
@@ -411,10 +419,17 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
 
     policyIsFixed = conf.getBoolean("mapred.mesos.scheduler.policy.fixed", policyIsFixed);
 
-    if (policyIsFixed) {
-      policy = new ResourcePolicyFixed(this);
-    } else {
-      policy = new ResourcePolicyVariable(this);
+    // if (policyIsFixed) {
+    //   policy = new ResourcePolicyFixed(this);
+    // } else {
+    //   policy = new ResourcePolicyVariable(this);
+    // }
+
+    try {
+      policy = new ResourcePolicyAssigned(this);
+    } catch (Exception e) {
+      LOG.fatal("Failed to init resource policy", e);
+      System.exit(1);
     }
 
     enableMetrics = conf.getBoolean("mapred.mesos.metrics.enabled", enableMetrics);
