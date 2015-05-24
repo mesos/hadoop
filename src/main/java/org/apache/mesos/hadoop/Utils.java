@@ -9,7 +9,11 @@ import java.io.*;
 import com.google.protobuf.ByteString;
 import org.apache.hadoop.conf.Configuration;
 
-public class Utils {
+public final class Utils {
+
+  private Utils() {
+
+  }
 
   public static String formatXml(String source) throws TransformerException {
     Source xmlInput = new StreamSource(new StringReader(source));

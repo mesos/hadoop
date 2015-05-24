@@ -69,8 +69,7 @@ public class MesosTracker {
         // fail to mark some TaskTrackers as active even though they are.
         // Here we do a final check with the JobTracker to make sure this
         // TaskTracker is really not there before we kill it.
-        final Collection<TaskTrackerStatus> taskTrackers =
-          MesosTracker.this.scheduler.jobTracker.taskTrackers();
+        final Collection<TaskTrackerStatus> taskTrackers = MesosTracker.this.scheduler.jobTracker.taskTrackers();
 
         for (TaskTrackerStatus status : taskTrackers) {
           HttpHost host = new HttpHost(status.getHost(), status.getHttpPort());

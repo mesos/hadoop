@@ -130,7 +130,7 @@ public abstract class ResourcePolicy {
                 continue;
               }
               while (begin <= end && ports.size() < 2) {
-                int port = begin + (int)(Math.random() * ((end - begin) + 1));
+                int port = begin + (int) (Math.random() * ((end - begin) + 1));
                 ports.add(port);
                 begin += 1;
               }
@@ -220,7 +220,7 @@ public abstract class ResourcePolicy {
 
         String jvmOpts = scheduler.conf.get("mapred.mesos.executor.jvm.opts");
         if (jvmOpts == null) {
-            jvmOpts = StringUtils.join(" ", defaultJvmOpts);
+          jvmOpts = StringUtils.join(" ", defaultJvmOpts);
         }
 
         // Set up the environment for running the TaskTracker.
@@ -232,8 +232,8 @@ public abstract class ResourcePolicy {
                     .setValue(
                         jvmOpts +
                             " -Xmx" + tasktrackerJVMHeap + "m" +
-                            " -XX:NewSize=" + tasktrackerJVMHeap / 3 + "m -XX:MaxNewSize=" + (int)Math.floor
-                            (tasktrackerJVMHeap * 0.6) + "m"
+                            " -XX:NewSize=" + tasktrackerJVMHeap / 3 + "m -XX:MaxNewSize=" +
+                            (int) Math.floor(tasktrackerJVMHeap * 0.6) + "m"
                     ));
 
         // Set java specific environment, appropriately.
@@ -277,7 +277,7 @@ public abstract class ResourcePolicy {
 
           directory = new File(uri).getName().split("\\.")[0] + "*";
         } else if (!isUriSet) {
-	    LOG.info("mapred.mesos.executor.uri is not set, relying on configured 'mapred.mesos.executor.directory' for working Hadoop distribution");
+          LOG.info("mapred.mesos.executor.uri is not set, relying on configured 'mapred.mesos.executor.directory' for working Hadoop distribution");
         }
 
         String command = scheduler.conf.get("mapred.mesos.executor.command");
@@ -290,7 +290,7 @@ public abstract class ResourcePolicy {
             .setEnvironment(envBuilder)
             .setValue(String.format("cd %s && %s", directory, command));
         if (uri != null) {
-            commandInfo.addUris(CommandInfo.URI.newBuilder().setValue(uri));
+          commandInfo.addUris(CommandInfo.URI.newBuilder().setValue(uri));
         }
 
         // Populate ContainerInfo if needed
@@ -518,8 +518,8 @@ public abstract class ResourcePolicy {
         "    Needed Reduce Slots: " + neededReduceSlots,
         "     Unhealthy Trackers: " + unhealthyTrackers)));
 
-      File stateFile = scheduler.stateFile;
-      if (stateFile != null) {
+    File stateFile = scheduler.stateFile;
+    if (stateFile != null) {
       // Update state file
       synchronized (this) {
         Set<String> hosts = new HashSet<>();
@@ -546,7 +546,7 @@ public abstract class ResourcePolicy {
               "")));
           fstream.close();
           if (!tmp.renameTo(stateFile)) {
-              LOG.error("Can't overwrite state " + stateFile.getAbsolutePath());
+            LOG.error("Can't overwrite state " + stateFile.getAbsolutePath());
           }
         } catch (Exception e) {
           LOG.error("Can't write state file: " + e.getMessage());
