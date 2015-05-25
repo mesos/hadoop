@@ -26,13 +26,10 @@ import java.util.concurrent.TimeUnit;
 public class Metrics {
   public MetricRegistry registry;
   public Meter killMeter, flakyTrackerKilledMeter, launchTimeout, periodicGC;
-  public Map<Integer, Meter> jobStateMeter =
-    new ConcurrentHashMap<Integer, Meter>();
-  public Map<TaskState, Meter> taskStateMeter =
-    new ConcurrentHashMap<TaskState, Meter>();
+  public Map<Integer, Meter> jobStateMeter = new ConcurrentHashMap<Integer, Meter>();
+  public Map<TaskState, Meter> taskStateMeter = new ConcurrentHashMap<TaskState, Meter>();
   public com.codahale.metrics.Timer jobTimer, trackerTimer;
-  public Map<JobID, com.codahale.metrics.Timer.Context> jobTimerContexts =
-    new ConcurrentHashMap<JobID, com.codahale.metrics.Timer.Context>();
+  public Map<JobID, com.codahale.metrics.Timer.Context> jobTimerContexts = new ConcurrentHashMap<JobID, com.codahale.metrics.Timer.Context>();
 
   public Metrics(Configuration conf) {
     registry = new MetricRegistry();
@@ -62,10 +59,10 @@ public class Metrics {
       final int interval = conf.getInt("mapred.mesos.metrics.csv.interval", 60);
 
       CsvReporter csvReporter = CsvReporter.forRegistry(registry)
-        .convertRatesTo(TimeUnit.SECONDS)
-        .convertDurationsTo(TimeUnit.MILLISECONDS)
-        .filter(MetricFilter.ALL)
-        .build(new File(path));
+          .convertRatesTo(TimeUnit.SECONDS)
+          .convertDurationsTo(TimeUnit.MILLISECONDS)
+          .filter(MetricFilter.ALL)
+          .build(new File(path));
       csvReporter.start(interval, TimeUnit.SECONDS);
     }
 
@@ -78,11 +75,11 @@ public class Metrics {
 
       Graphite graphite = new Graphite(new InetSocketAddress(host, port));
       GraphiteReporter graphiteReporter = GraphiteReporter.forRegistry(registry)
-        .prefixedWith(prefix)
-        .convertRatesTo(TimeUnit.SECONDS)
-        .convertDurationsTo(TimeUnit.MILLISECONDS)
-        .filter(MetricFilter.ALL)
-        .build(graphite);
+          .prefixedWith(prefix)
+          .convertRatesTo(TimeUnit.SECONDS)
+          .convertDurationsTo(TimeUnit.MILLISECONDS)
+          .filter(MetricFilter.ALL)
+          .build(graphite);
       graphiteReporter.start(interval, TimeUnit.SECONDS);
     }
 
@@ -106,11 +103,11 @@ public class Metrics {
           consistency);
 
       CassandraReporter cassandraReporter = CassandraReporter.forRegistry(registry)
-        .prefixedWith(prefix)
-        .convertRatesTo(TimeUnit.SECONDS)
-        .convertDurationsTo(TimeUnit.MILLISECONDS)
-        .filter(MetricFilter.ALL)
-        .build(cassandra);
+          .prefixedWith(prefix)
+          .convertRatesTo(TimeUnit.SECONDS)
+          .convertDurationsTo(TimeUnit.MILLISECONDS)
+          .filter(MetricFilter.ALL)
+          .build(cassandra);
       cassandraReporter.start(interval, TimeUnit.SECONDS);
     }
   }

@@ -12,7 +12,6 @@ import org.apache.mesos.Protos.TaskStatus;
 import java.io.*;
 
 import java.lang.reflect.Field;
-import java.lang.ReflectiveOperationException;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
@@ -192,7 +191,7 @@ public class MesosExecutor implements Executor {
 
   /**
    * This is a hack to overcome lack of accessibility of the launcher. Will solicit feedback from Hadoop list.
-   * 
+   *
    * @param tracker tracker with launcher we want to kill
    * @param name name of the field containing the launcher
    * @throws NoSuchFieldException
