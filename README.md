@@ -135,7 +135,7 @@ operation](http://hadoop.apache.org/docs/stable/single_node_setup.html#PseudoDis
 </property>
 ```
 
-[More details on configuration propertios can be found here.](configuration.md)
+[More details on configuration properties can be found here.](configuration.md)
 
 #### Start ####
 
@@ -145,13 +145,13 @@ to the Mesos native library.
 On Linux:
 
 ```
-$ MESOS_NATIVE_LIBRARY=/path/to/libmesos.so hadoop jobtracker
+$ MESOS_NATIVE_JAVA_LIBRARY=/path/to/libmesos.so hadoop jobtracker
 ```
 
 And on OS X:
 
 ```
-$ MESOS_NATIVE_LIBRARY=/path/to/libmesos.dylib hadoop jobtracker
+$ MESOS_NATIVE_JAVA_LIBRARY=/path/to/libmesos.dylib hadoop jobtracker
 ```
 
 > **NOTE: You do not need to worry about distributing your Hadoop
