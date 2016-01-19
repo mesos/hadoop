@@ -442,7 +442,7 @@ public class ResourcePolicy {
         overrides.setLong("mapred.tasktracker.reduce.tasks.maximum", reduceSlots);
 
         // Build up the executor info
-        ExecutorInfo executor = ExecutorInfo
+        ExecutorInfo.Builder executorBuilder = ExecutorInfo
             .newBuilder()
             .setExecutorId(ExecutorID.newBuilder().setValue(
                 "executor_" + taskId.getValue()))
@@ -469,8 +469,13 @@ public class ResourcePolicy {
                     .setType(Value.Type.SCALAR)
                     .setRole(diskRole)
                     .setScalar(Value.Scalar.newBuilder().setValue(containerDisk)))
-            .setCommand(commandInfo.build())
-            .build();
+            .setCommand(commandInfo.build());
+
+        // Add the docker container info if an image is specified
+        String dockerImage = scheduler.conf.get("mapred.mesos.docker.image");
+        if (dockerImage != null && !dockerImage.equals("")) {
+          executorBuilder.setContainer(org.apache.mesos.hadoop.Utils.buildDockerContainerInfo(scheduler.conf));
+        }
 
         ByteString taskData;
 
@@ -520,7 +525,7 @@ public class ResourcePolicy {
                     .setRole(memRole)
                     .setScalar(Value.Scalar.newBuilder().setValue(taskMem - containerCpus)))
             .setData(taskData)
-            .setExecutor(executor)
+            .setExecutor(executorBuilder.build())
             .build();
 
         // Add this tracker to Mesos tasks.

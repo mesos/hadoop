@@ -11,6 +11,9 @@ import org.apache.hadoop.conf.Configuration;
 
 import org.apache.mesos.Protos.CommandInfo;
 import org.apache.mesos.Protos.ContainerInfo;
+import org.apache.mesos.Protos.Parameter;
+import org.apache.mesos.Protos.Parameters;
+import org.apache.mesos.Protos.Volume;
 
 public class Utils {
 
@@ -56,5 +59,77 @@ public class Utils {
     }
 
     return containerInfo.build();
+  }
+
+  public static ContainerInfo buildDockerContainerInfo(Configuration conf) {
+    ContainerInfo.Builder containerInfoBuilder = ContainerInfo.newBuilder();
+    ContainerInfo.DockerInfo.Builder dockerInfoBuilder = ContainerInfo.DockerInfo.newBuilder();
+
+    dockerInfoBuilder.setImage(conf.get("mapred.mesos.docker.image"));
+
+    switch (conf.getInt("mapred.mesos.docker.network", 1)) {
+      case 1:
+        dockerInfoBuilder.setNetwork(ContainerInfo.DockerInfo.Network.HOST);
+      case 2:
+        dockerInfoBuilder.setNetwork(ContainerInfo.DockerInfo.Network.BRIDGE);
+      case 3:
+        dockerInfoBuilder.setNetwork(ContainerInfo.DockerInfo.Network.NONE);
+    }
+
+    dockerInfoBuilder.setPrivileged(conf.getBoolean("mapred.mesos.docker.privileged", false));
+    dockerInfoBuilder.setForcePullImage(conf.getBoolean("mapred.mesos.docker.force_pull_image", false));
+
+    // Parse out any additional docker CLI params
+    String[] params = conf.getStrings("mapred.mesos.docker.parameters");
+    if (params.length > 0) {
+      assert (params.length % 2) == 0; // Make sure we have an even number of parameters
+
+      Parameter.Builder paramBuilder = null;
+      for (int i = 0; i < params.length; i++) {
+        if (paramBuilder == null) {
+          paramBuilder = Parameter.newBuilder();
+          paramBuilder.setKey(params[i]);
+        } else {
+          paramBuilder.setValue(params[i]);
+          dockerInfoBuilder.addParameters(paramBuilder.build());
+          paramBuilder = null;
+        }
+      }
+    }
+
+    // Parse out any volumes that have been defined
+    String[] volumes = conf.getStrings("mapred.mesos.docker.volumes");
+    if (volumes.length > 0) {
+      for (int i = 0; i < volumes.length; i++) {
+        String[] parts = volumes[i].split(":");
+        assert parts.length > 1;
+        assert parts.length <= 3;
+
+        Volume.Mode mode = Volume.Mode.RW;
+        if (parts[-1].toLowerCase().equals("ro")) {
+          mode = Volume.Mode.RO;
+        }
+
+        if (parts.length == 2) {
+          containerInfoBuilder.addVolumes(
+            Volume.newBuilder()
+                  .setContainerPath(parts[0])
+                  .setMode(mode)
+                  .build());
+        } else {
+          containerInfoBuilder.addVolumes(
+            Volume.newBuilder()
+                  .setHostPath(parts[0])
+                  .setContainerPath(parts[1])
+                  .setMode(mode)
+                  .build());
+        }
+      }
+    }
+
+    containerInfoBuilder.setType(ContainerInfo.Type.DOCKER);
+    containerInfoBuilder.setDocker(dockerInfoBuilder.build());
+
+    return containerInfoBuilder.build();
   }
 }
