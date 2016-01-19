@@ -9,6 +9,9 @@ import java.io.*;
 import com.google.protobuf.ByteString;
 import org.apache.hadoop.conf.Configuration;
 
+import org.apache.mesos.Protos.CommandInfo;
+import org.apache.mesos.Protos.ContainerInfo;
+
 public class Utils {
 
   public static String formatXml(String source) throws TransformerException {
@@ -33,5 +36,25 @@ public class Utils {
 
     byte[] bytes = baos.toByteArray();
     return ByteString.copyFrom(bytes);
+  }
+
+  public static CommandInfo.ContainerInfo buildContainerInfo(Configuration conf) {
+    String containerImage = conf.get("mapred.mesos.container.image");
+    String[] containerOptions = conf.getStrings("mapred.mesos.container.options");
+
+    CommandInfo.ContainerInfo.Builder containerInfo =
+        CommandInfo.ContainerInfo.newBuilder();
+
+    if (containerImage != null) {
+      containerInfo.setImage(containerImage);
+    }
+
+    if (containerOptions != null) {
+      for (int i = 0; i < containerOptions.length; i++) {
+        containerInfo.addOptions(containerOptions[i]);
+      }
+    }
+
+    return containerInfo.build();
   }
 }

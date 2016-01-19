@@ -422,25 +422,10 @@ public class ResourcePolicy {
             commandInfo.addUris(CommandInfo.URI.newBuilder().setValue(uri));
         }
 
-        // Populate ContainerInfo if needed
+        // Populate old-style ContainerInfo if needed
         String containerImage = scheduler.conf.get("mapred.mesos.container.image");
-        String[] containerOptions = scheduler.conf.getStrings("mapred.mesos.container.options");
-
-        if (containerImage != null || (containerOptions != null && containerOptions.length > 0)) {
-          CommandInfo.ContainerInfo.Builder containerInfo =
-              CommandInfo.ContainerInfo.newBuilder();
-
-          if (containerImage != null) {
-            containerInfo.setImage(containerImage);
-          }
-
-          if (containerOptions != null) {
-            for (int i = 0; i < containerOptions.length; i++) {
-              containerInfo.addOptions(containerOptions[i]);
-            }
-          }
-
-          commandInfo.setContainer(containerInfo.build());
+        if (containerImage != null && !containerImage.equals("")) {
+          commandInfo.setContainer(org.apache.mesos.hadoop.Utils.buildContainerInfo(scheduler.conf));
         }
 
         // Create a configuration from the current configuration and
