@@ -4,6 +4,7 @@ package org.apache.mesos.hadoop;
 import javax.xml.transform.*;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
+import java.lang.IllegalArgumentException;
 import java.io.*;
 
 import com.google.protobuf.ByteString;
@@ -85,7 +86,10 @@ public class Utils {
     // Parse out any additional docker CLI params
     String[] params = conf.getStrings("mapred.mesos.docker.parameters");
     if (params != null && params.length > 0) {
-      assert (params.length % 2) == 0; // Make sure we have an even number of parameters
+      // Make sure we have an even number of parameters
+      if ((params.length % 2) != 0) {
+        throw new IllegalArgumentException("The number of parameters should be even, k/v pairs");
+      }
 
       Parameter.Builder paramBuilder = null;
       for (int i = 0; i < params.length; i++) {
@@ -105,8 +109,10 @@ public class Utils {
     if (volumes != null && volumes.length > 0) {
       for (int i = 0; i < volumes.length; i++) {
         String[] parts = volumes[i].split(":");
-        assert parts.length > 1;
-        assert parts.length <= 3;
+
+        if (parts.length <= 1 || parts.length > 3) {
+          throw new IllegalArgumentException("Invalid volume configuration (host_path:container_path:[rw|ro])");
+        }
 
         Volume.Mode mode = Volume.Mode.RW;
         if (parts[parts.length - 1].equalsIgnoreCase("ro")) {
