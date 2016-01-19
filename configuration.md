@@ -183,7 +183,7 @@ default values.
       Comma separated list of command line arguments to pass directly to the
       docker run invocation. For example...
 
-      "-e,FOO=bar,-e,BAZ=test"
+      "env,FOO=bar,env,BAZ=test"
     </description>
   </property>
   <property>
