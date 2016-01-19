@@ -107,7 +107,7 @@ public class Utils {
         assert parts.length <= 3;
 
         Volume.Mode mode = Volume.Mode.RW;
-        if (parts[-1].toLowerCase().equals("ro")) {
+        if (parts[parts.length - 1].toLowerCase().equals("ro")) {
           mode = Volume.Mode.RO;
         }
 
