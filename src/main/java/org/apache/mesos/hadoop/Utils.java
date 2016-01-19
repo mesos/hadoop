@@ -75,6 +75,8 @@ public class Utils {
         dockerInfoBuilder.setNetwork(DockerInfo.Network.BRIDGE);
       case 3:
         dockerInfoBuilder.setNetwork(DockerInfo.Network.NONE);
+      default:
+        dockerInfoBuilder.setNetwork(DockerInfo.Network.HOST);
     }
 
     dockerInfoBuilder.setPrivileged(conf.getBoolean("mapred.mesos.docker.privileged", false));
