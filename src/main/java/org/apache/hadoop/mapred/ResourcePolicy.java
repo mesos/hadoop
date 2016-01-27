@@ -422,25 +422,10 @@ public class ResourcePolicy {
             commandInfo.addUris(CommandInfo.URI.newBuilder().setValue(uri));
         }
 
-        // Populate ContainerInfo if needed
+        // Populate old-style ContainerInfo if needed
         String containerImage = scheduler.conf.get("mapred.mesos.container.image");
-        String[] containerOptions = scheduler.conf.getStrings("mapred.mesos.container.options");
-
-        if (containerImage != null || (containerOptions != null && containerOptions.length > 0)) {
-          CommandInfo.ContainerInfo.Builder containerInfo =
-              CommandInfo.ContainerInfo.newBuilder();
-
-          if (containerImage != null) {
-            containerInfo.setImage(containerImage);
-          }
-
-          if (containerOptions != null) {
-            for (int i = 0; i < containerOptions.length; i++) {
-              containerInfo.addOptions(containerOptions[i]);
-            }
-          }
-
-          commandInfo.setContainer(containerInfo.build());
+        if (containerImage != null && !containerImage.equals("")) {
+          commandInfo.setContainer(org.apache.mesos.hadoop.Utils.buildContainerInfo(scheduler.conf));
         }
 
         // Create a configuration from the current configuration and
@@ -457,7 +442,7 @@ public class ResourcePolicy {
         overrides.setLong("mapred.tasktracker.reduce.tasks.maximum", reduceSlots);
 
         // Build up the executor info
-        ExecutorInfo executor = ExecutorInfo
+        ExecutorInfo.Builder executorBuilder = ExecutorInfo
             .newBuilder()
             .setExecutorId(ExecutorID.newBuilder().setValue(
                 "executor_" + taskId.getValue()))
@@ -484,8 +469,13 @@ public class ResourcePolicy {
                     .setType(Value.Type.SCALAR)
                     .setRole(diskRole)
                     .setScalar(Value.Scalar.newBuilder().setValue(containerDisk)))
-            .setCommand(commandInfo.build())
-            .build();
+            .setCommand(commandInfo.build());
+
+        // Add the docker container info if an image is specified
+        String dockerImage = scheduler.conf.get("mapred.mesos.docker.image");
+        if (dockerImage != null && !dockerImage.equals("")) {
+          executorBuilder.setContainer(org.apache.mesos.hadoop.Utils.buildDockerContainerInfo(scheduler.conf));
+        }
 
         ByteString taskData;
 
@@ -535,7 +525,7 @@ public class ResourcePolicy {
                     .setRole(memRole)
                     .setScalar(Value.Scalar.newBuilder().setValue(taskMem - containerCpus)))
             .setData(taskData)
-            .setExecutor(executor)
+            .setExecutor(executorBuilder.build())
             .build();
 
         // Add this tracker to Mesos tasks.

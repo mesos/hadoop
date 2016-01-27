@@ -142,6 +142,63 @@ default values.
     </description>
   </property>
 
+  <!-- If you're using Mesos Native Docker -->
+  <property>
+    <name>mapred.mesos.docker.image</name>
+    <value>my-registry.com/image/foo:tag</value>
+    <description>
+      If you want the TaskTracker executor processes to start inside Docker containers,
+      specify the docker image here.
+    </description>
+  </property>
+  <property>
+    <name>mapred.mesos.docker.network</name>
+    <value>1</value>
+    <description>
+      Use this option to change the networking configuration for containers. The
+      default here is to use HOST networking (the container shares the network)
+      with the host, no isolation.
+      1 = HOST, 2 = BRIDGE, 3 = NONE;
+    </description>
+  </property>
+  <property>
+    <name>mapred.mesos.docker.privileged</name>
+    <value>false</value>
+    <description>
+      Enable the --privileged option on the executor containers.
+    </description>
+  </property>
+  <property>
+    <name>mapred.mesos.docker.force_pull_image</name>
+    <value>false</value>
+    <description>
+      Tell the mesos slave to always check it has the latest version of the container
+      image before starting the container.
+    </description>
+  </property>
+  <property>
+    <name>mapred.mesos.docker.parameters</name>
+    <value></value>
+    <description>
+      Comma separated list of command line arguments to pass directly to the
+      docker run invocation. For example...
+
+      "env,FOO=bar,env,BAZ=test"
+    </description>
+  </property>
+  <property>
+    <name>mapred.mesos.docker.volumes</name>
+    <value></value>
+    <description>
+      Comma separated list of volumes to mount into the container. The format for
+      the volume definition is similar to the docker CLI, for example...
+
+      "/host/path:/container/path:rw" (mount /host/path to /container/path read-write)
+      "/host/path:/container/path:ro" (mount /host/path to /container/path read-only)
+      "/host/path:ro" (mount /host/path to /host/path read-only)
+    </description>
+  </property>
+
   <!-- If you're using a custom Mesos Containerizer -->
   <property>
     <name>mapred.mesos.container.image</name>
