@@ -402,6 +402,11 @@ public class MesosScheduler extends TaskScheduler implements Scheduler {
       case TASK_STAGING:
       case TASK_STARTING:
       case TASK_RUNNING:
+        for (MesosTracker tracker : mesosTrackers.values()) {
+          if (tracker.taskId.equals(taskStatus.getTaskId())) {
+            tracker.active = true;
+          }
+        }
         break;
       default:
         LOG.error("Unexpected TaskStatus: " + taskStatus.getState().name());
